@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>PeRC – Thiết kế cốt thép TCVN 5574:2018</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<aside class="side">
+  <div class="brand"><span class="logo">Pe<b>RC</b></span><small>Thiết kế cốt thép<br>TCVN 5574:2018</small></div>
+  <nav>
+    <button data-page="projects" class="active"><i>☰</i>Dự án</button>
+    <div class="nav-project" id="nav-project">–</div>
+    <button data-page="etabs"><i>1</i>ETABS<span class="dot" id="dot-project"></span></button>
+    <button data-page="beams"><i>2</i>Thiết kế dầm<span class="dot" id="dot-beams"></span></button>
+    <button data-page="columns"><i>3</i>Thiết kế cột<span class="dot" id="dot-columns"></span></button>
+    <button data-page="drawings"><i>4</i>Bản vẽ<span class="dot" id="dot-drawings"></span></button>
+    <button data-page="quantity"><i>5</i>Khối lượng<span class="dot" id="dot-quantities"></span></button>
+  </nav>
+  <div class="model" id="model-name">Chưa có dữ liệu</div>
+</aside>
+
+<main>
+  <!-- 0. Dự án -->
+  <section class="page active" id="page-projects">
+    <header class="row"><div class="grow"><h1>Dự án</h1>
+      <p>Mỗi dự án lưu toàn bộ kết quả: dữ liệu ETABS, thiết kế dầm cột, bản vẽ, khối lượng. Mở lại là xem được ngay, không cần chạy lại.</p></div></header>
+    <div class="card row">
+      <input id="new-name" placeholder="Tên dự án mới, ví dụ: Nhà 25 tầng – phương án 2" style="flex:1">
+      <button class="primary" id="btn-new">Tạo dự án mới</button>
+    </div>
+    <div class="projects" id="project-list"></div>
+  </section>
+
+  <!-- 1. ETABS -->
+  <section class="page" id="page-etabs">
+    <header><h1>Kết nối ETABS</h1>
+      <p>Mở model trong ETABS (bản 18 trở lên), chạy phân tích (F5), rồi bấm đọc dữ liệu.</p></header>
+    <div class="card row">
+      <div class="grow"><h3>ETABS đang mở</h3><div id="etabs-list" class="muted">Đang kiểm tra…</div></div>
+      <button class="ghost" id="btn-etabs-refresh">Kiểm tra lại</button>
+      <button class="primary" data-run="etabs">Đọc dữ liệu từ ETABS</button>
+    </div>
+    <div class="card">
+      <div class="row"><h3 class="grow" style="margin:0">Tổ hợp tải trọng dùng để thiết kế</h3>
+        <button class="ghost" data-run="combos">Đọc danh sách tổ hợp</button></div>
+      <p class="muted" style="margin:6px 0 10px">Mặc định chọn các tổ hợp tự đặt, bỏ tổ hợp bao (BAO/Envelope – chỉ là max/min
+        của các tổ hợp khác) và tổ hợp ETABS tự sinh. Lựa chọn được lưu trong dự án, dùng khi bấm "Đọc dữ liệu từ ETABS".</p>
+      <div class="row" style="gap:8px;margin-bottom:8px">
+        <button class="link" id="cb-default">Chọn mặc định</button> ·
+        <button class="link" id="cb-all">Chọn tất cả</button> ·
+        <button class="link" id="cb-none">Bỏ hết</button>
+        <span class="muted grow" id="cb-count"></span></div>
+      <div class="combos" id="combo-list"></div>
+    </div>
+    <div class="stats" id="project-stats"></div>
+  </section>
+
+  <!-- 2. Dầm -->
+  <section class="page" id="page-beams">
+    <header class="row"><div class="grow"><h1>Thiết kế dầm</h1>
+      <p>Uốn theo 8.1.2, cắt theo 8.1.3; bố trí thép theo 3 vùng: đầu trái, giữa nhịp, đầu phải.</p></div>
+      <button class="primary" data-run="beams">Thiết kế lại</button></header>
+    <div class="stats" id="beam-stats"></div>
+    <div class="toolbar">
+      <select class="story-select" id="beam-story"></select>
+      <input id="beam-q" placeholder="Tìm tên dầm, tiết diện…">
+      <label><input type="checkbox" id="beam-ng"> Chỉ dầm không đạt</label>
+      <span class="muted" id="beam-count"></span>
+    </div>
+    <div class="split">
+      <div class="table-wrap"><table id="beam-table">
+        <thead><tr><th>Tầng</th><th>Dầm</th><th>Tiết diện</th><th>L (m)</th>
+          <th>Thép trên<br><small>trái · giữa · phải</small></th><th>Thép dưới<br><small>trái · giữa · phải</small></th>
+          <th>Cốt đai</th><th>Hệ số SD</th></tr></thead><tbody></tbody></table></div>
+      <div class="preview" id="beam-preview"><div class="empty">Chọn một dầm để xem bản vẽ</div></div>
+    </div>
+  </section>
+
+  <!-- 3. Cột -->
+  <section class="page" id="page-columns">
+    <header class="row"><div class="grow"><h1>Thiết kế cột</h1>
+      <p>Nén lệch tâm xiên: mặt tương tác N–M3–M2 theo mô hình thớ, kể độ lệch tâm ngẫu nhiên và uốn dọc η.</p></div>
+      <button class="primary" data-run="columns">Thiết kế lại</button></header>
+    <div class="stats" id="col-stats"></div>
+    <div class="toolbar">
+      <select class="story-select" id="col-story"></select>
+      <input id="col-q" placeholder="Tìm tên cột, tiết diện…">
+      <label><input type="checkbox" id="col-ng"> Chỉ cột không đạt</label>
+      <span class="muted" id="col-count"></span>
+    </div>
+    <div class="split">
+      <div class="table-wrap"><table id="col-table">
+        <thead><tr><th>Tầng</th><th>Cột</th><th>Tiết diện</th><th>Thép dọc</th><th>Cốt đai</th>
+          <th>μ (%)</th><th>Tổ hợp bất lợi</th><th>Hệ số SD</th></tr></thead><tbody></tbody></table></div>
+      <div class="preview" id="col-preview"><div class="empty">Chọn một cột để xem bản vẽ</div></div>
+    </div>
+  </section>
+
+  <!-- 4. Bản vẽ -->
+  <section class="page" id="page-drawings">
+    <header><h1>Xuất bản vẽ</h1>
+      <p>Mỗi tầng xuất 1 file DXF (AutoCAD): mặt cắt dọc + 3 mặt cắt ngang mỗi dầm, mặt cắt mỗi cột, đủ kích thước và ký hiệu thép.</p></header>
+    <div class="card row">
+      <select class="story-select" id="draw-story"></select>
+      <button class="primary" id="btn-draw">Xuất DXF tầng này</button>
+      <span class="muted grow">Dầm không đạt (không xếp đủ thép) sẽ không có bản vẽ.</span>
+    </div>
+    <div class="card row">
+      <select id="draw-col"></select>
+      <select id="draw-col-story"></select>
+      <button class="ghost" id="btn-col-view">Xem</button>
+      <button class="primary" id="btn-col-draw">Xuất DXF mặt cắt dọc cột</button>
+      <span class="muted grow">Mỗi bản vẽ 1 tầng, từ sàn dưới lên sàn trên: nối chồng, bẻ xiên 1:6 ở nút, nút mái theo 10.4.11,
+        mặt cắt ngang và mặt cắt vùng nối. Chọn "Tất cả tầng" thì mỗi tầng xuất 1 file DXF riêng.</span>
+    </div>
+    <div class="card"><h3>File đã xuất</h3><div id="draw-list"></div></div>
+  </section>
+
+  <!-- 5. Khối lượng -->
+  <section class="page" id="page-quantity">
+    <header class="row"><div class="grow"><h1>Bóc tách khối lượng</h1>
+      <p>Bê tông, ván khuôn, cốt thép của cột, dầm, sàn, vách, theo từng tầng, kèm diễn giải.</p></div>
+      <button class="ghost" id="btn-excel">Mở file Excel</button>
+      <button class="primary" data-run="quantity">Bóc khối lượng</button></header>
+    <div class="card">
+      <div class="row" style="margin-bottom:10px"><h3 class="grow" style="margin:0">Bảng tiên lượng</h3>
+        <span>Tầng:</span><select id="tl-story"></select>
+        <label><input type="checkbox" id="tl-hide"> Ẩn diễn giải khối lượng</label></div>
+      <div class="table-wrap tl-wrap"><table class="tl" id="tl-table"></table></div>
+    </div>
+    <div class="card"><h3>Tổng hợp toàn công trình</h3>
+      <table class="qty" id="qty-table"></table></div>
+    <div class="card"><h3>Bê tông và cốt thép theo tầng</h3><div id="qty-chart" class="chart"></div></div>
+  </section>
+</main>
+
+<!-- Thanh tác vụ + nhật ký -->
+<footer id="job">
+  <div class="job-head"><span class="spin"></span><b id="job-label">Sẵn sàng</b>
+    <span class="muted" id="job-time"></span><span class="grow"></span>
+    <button class="link" id="job-toggle">Nhật ký ▴</button></div>
+  <pre id="job-log"></pre>
+</footer>
+
+<div id="modal"><div class="modal-body"><button class="close" id="modal-close">✕</button><div id="modal-img"></div></div></div>
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

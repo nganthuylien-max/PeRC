@@ -1,0 +1,23 @@
+# Môi trường Python
+.venv/
+__pycache__/
+*.pyc
+
+# Dữ liệu dự án và kết quả chạy (nặng, mỗi máy tự tạo)
+projects/
+project.json
+design_beams.json
+design_columns.json
+quantities.json
+combos_*.json
+*.xlsx
+drawings/
+*.dxf
+*.svg
+
+# File thử, file tạm
+test.*
+Claude outputs/
+build/
+dist/
+*.spec
