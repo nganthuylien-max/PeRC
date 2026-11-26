@@ -33,6 +33,13 @@
 - Windows 10/11, **ETABS 18 trở lên** (model đã chạy phân tích)
 - Python 3.12 (64-bit)
 
+## Bản chạy sẵn (không cần cài Python)
+
+Vào mục **Releases** của repo, tải `PeRC_v1.0.0.zip`, giải nén, chạy `PeRC\PeRC.exe`.
+Dự án được lưu trong thư mục `projects` cạnh file exe. Máy cần có ETABS 18 trở lên và đăng nhập Google khi mở app.
+
+Tự đóng gói từ mã nguồn: chạy `build_exe.bat` (kết quả ở `dist\PeRC` và `PeRC_v1.0.0.zip`).
+
 ## Cài đặt và chạy
 
 ```

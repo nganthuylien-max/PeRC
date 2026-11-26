@@ -20,7 +20,8 @@ from flask import Flask, Response, abort, jsonify, request, send_from_directory
 from app import projects as P
 from app.auth import SESSION, TASK_COST
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))     # thư mục D:\RCDesign
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))     # thư mục D:\RCDesign (mã nguồn)
+FROZEN = getattr(sys, "frozen", False)                                  # đang chạy bản PeRC.exe
 sys.path.insert(0, ROOT)
 
 app = Flask(__name__, static_folder=os.path.join(os.path.dirname(__file__), "static"), static_url_path="")
@@ -100,8 +101,12 @@ class Job:
             self.task, self.state, self.log = task, "running", []
             self.started, self.ended = time.time(), 0.0
             env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
+            if FROZEN:      # PeRC.exe tự chạy script (xem run_app.py)
+                cmd = [sys.executable, "--run", os.path.join(ROOT, script), *args]
+            else:
+                cmd = [sys.executable, "-u", os.path.join(ROOT, script), *args]
             self.proc = subprocess.Popen(
-                [sys.executable, "-u", os.path.join(ROOT, script), *args], cwd=P.folder(self.project), env=env,
+                cmd, cwd=P.folder(self.project), env=env,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         threading.Thread(target=self._pump, daemon=True).start()

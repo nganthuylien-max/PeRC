@@ -21,7 +21,12 @@ import re
 import shutil
 import time
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+import sys
+
+if getattr(sys, "frozen", False):        # bản PeRC.exe: dự án lưu cạnh file exe
+    ROOT = os.path.dirname(sys.executable)
+else:                                    # chạy từ mã nguồn: thư mục D:\RCDesign
+    ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PROJECTS = os.path.join(ROOT, "projects")
 ACTIVE = os.path.join(PROJECTS, "active.txt")
 RESULT_FILES = ("project.json", "design_beams.json", "design_columns.json", "quantities.json",

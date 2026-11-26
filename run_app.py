@@ -1,6 +1,25 @@
 """Khởi động PeRC: chạy máy chủ Flask cục bộ rồi mở cửa sổ ứng dụng (pywebview).
    python run_app.py
-Không có pywebview thì mở bằng trình duyệt mặc định."""
+Không có pywebview thì mở bằng trình duyệt mặc định.
+
+Bản đóng gói PeRC.exe không có python.exe đi kèm, nên các tác vụ dài (đọc ETABS, thiết kế...)
+chạy bằng chính PeRC.exe với tham số:  PeRC.exe --run <script.py> [đối số]"""
+import os
+import sys
+
+if len(sys.argv) > 2 and sys.argv[1] == "--run":          # chế độ chạy 1 script tính toán (tiến trình con)
+    import runpy
+    sys.path.insert(0, getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__))))
+    script = sys.argv[2]
+    sys.argv = [script, *sys.argv[3:]]
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", line_buffering=True)   # in ra từng dòng ngay
+        except Exception:
+            pass
+    runpy.run_path(script, run_name="__main__")
+    sys.exit(0)
+
 import socket
 import threading
 import time
