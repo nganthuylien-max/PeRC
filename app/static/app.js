@@ -17,7 +17,7 @@ $$("nav button").forEach(b => b.onclick = () => show(b.dataset.page));
 function show(page) {
   $$("nav button").forEach(b => b.classList.toggle("active", b.dataset.page === page));
   $$(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + page));
-  ({projects: loadProjects, etabs: loadEtabs, beams: loadBeams, columns: loadColumns, drawings: loadDrawings, quantity: loadQty})[page]();
+  ({account: loadAccount, admin: loadAdmin, projects: loadProjects, etabs: loadEtabs, beams: loadBeams, columns: loadColumns, drawings: loadDrawings, quantity: loadQty})[page]();
 }
 
 // ---------------------------------------------------------------- trạng thái chung
@@ -303,6 +303,8 @@ $$("[data-run]").forEach(b => b.onclick = () => runTask(b.dataset.run));
 async function runTask(task, body = {}) {
   const r = await api("/api/run/" + task, body);
   if (!r.ok) return toast(r.error, true);
+  if (r.note) toast(r.note);
+  loadAuth();
   $("#job-log").textContent = ""; logN = 0;
   $("#job").classList.add("open");
   poll();
@@ -334,4 +336,105 @@ async function poll() {
 $("#job-toggle").onclick = () => $("#job").classList.toggle("open");
 
 // ---------------------------------------------------------------- khởi động
-(async () => { await loadSummary(); loadProjects(); poll(); })();
+// ---------------------------------------------------------------- đăng nhập, tài khoản, quản trị
+const TERMS = `<ol>
+<li>PeRC là công cụ hỗ trợ thiết kế theo TCVN 5574:2018. Kết quả phải được kỹ sư có chuyên môn kiểm tra trước khi sử dụng;
+  tác giả không chịu trách nhiệm về thiệt hại phát sinh từ việc dùng kết quả chưa được kiểm tra.</li>
+<li>Khi đăng nhập bằng Google, PeRC chỉ lưu email, tên hiển thị, thời điểm sử dụng và số điểm đã dùng
+  (để tính hạn mức). Model ETABS, kết quả thiết kế và bản vẽ chỉ lưu trên máy của bạn, không gửi lên máy chủ.</li>
+<li>Mỗi tài khoản có hạn mức điểm theo ngày. Quản trị viên có thể điều chỉnh hạn mức hoặc khoá tài khoản vi phạm.</li>
+<li>Bạn có thể xoá tài khoản và toàn bộ dữ liệu sử dụng trên máy chủ bất cứ lúc nào ở trang Tài khoản.</li>
+<li>Dịch vụ miễn phí, có thể thay đổi hoặc ngừng mà không báo trước.</li></ol>`;
+$("#terms-text").innerHTML = TERMS;
+$("#login-terms").innerHTML = TERMS;
+$("#show-terms").onclick = e => { e.preventDefault(); $("#login-terms").hidden = !$("#login-terms").hidden; };
+
+let AUTH = null;
+async function loadAuth(refresh = false) {
+  AUTH = await api("/api/auth/status" + (refresh ? "?refresh=1" : ""));
+  const needLogin = AUTH.configured && !AUTH.logged_in;
+  $("#login").hidden = !needLogin;
+  if (needLogin) {
+    $("#login-msg").textContent = AUTH.pending ? "Đang chờ bạn đăng nhập trên trình duyệt…"
+      : (AUTH.error || "Đăng nhập 1 lần, app tự giữ đăng nhập trên máy này.");
+    $("#btn-login").disabled = !!AUTH.pending;
+  }
+  const s = AUTH.status;
+  $("#acct").hidden = !AUTH.logged_in;
+  $("#nav-admin").hidden = !(s && s.is_admin);
+  if (AUTH.logged_in) {
+    const left = Math.max(0, s.quota - s.used);
+    $("#acct-mail").textContent = s.email;
+    $("#credit-bar").style.width = (s.quota ? left / s.quota * 100 : 0) + "%";
+    $("#acct-txt").innerHTML = `Còn <b>${left}</b>/${s.quota} điểm hôm nay` +
+      (AUTH.offline ? `<br><span class="off">Offline – còn ${Math.floor(AUTH.offline_hours_left)} giờ</span>` : "");
+  }
+  if (!AUTH.configured) $("#acct").hidden = true;
+  return AUTH;
+}
+$("#btn-login").onclick = async () => {
+  if (!$("#agree").checked) return toast("Hãy đồng ý Điều khoản sử dụng trước.", true);
+  const r = await api("/api/auth/login", {});
+  if (!r.ok) return toast(r.error, true);
+  await loadAuth();
+  const t = setInterval(async () => {                    // chờ đăng nhập xong trên trình duyệt
+    const a = await loadAuth();
+    if (!a.pending) { clearInterval(t); if (a.logged_in) { toast("Đăng nhập thành công"); start(); } }
+  }, 1500);
+};
+function loadAccount() {
+  if (!AUTH || !AUTH.logged_in) return;
+  const s = AUTH.status;
+  $("#acct-stats").innerHTML = [stat(esc(s.email), s.name ? esc(s.name) : "email"),
+    stat(`${s.quota - s.used}/${s.quota}`, "điểm còn lại hôm nay", "ok"),
+    stat(s.is_admin ? "Quản trị" : "Người dùng", "vai trò")].join("");
+  const names = {combos: "Đọc danh sách tổ hợp", etabs: "Đọc dữ liệu ETABS", beams: "Thiết kế dầm",
+                 columns: "Thiết kế cột", drawings: "Xuất bản vẽ DXF", quantity: "Bóc khối lượng"};
+  $("#cost-table").innerHTML = "<tbody>" + Object.entries(AUTH.costs).map(([k, v]) =>
+    `<tr><td>${names[k] || k}</td><td>${v} điểm</td></tr>`).join("") + "</tbody>";
+}
+$("#btn-logout").onclick = async () => { await api("/api/auth/logout", {}); await loadAuth(); };
+$("#btn-delete-me").onclick = async e => {
+  const b = e.target;
+  if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "Bấm lần nữa để xoá vĩnh viễn";
+    return setTimeout(() => { delete b.dataset.sure; b.textContent = "Xoá tài khoản và dữ liệu của tôi"; }, 4000); }
+  const r = await api("/api/auth/delete", {});
+  toast(r.ok ? "Đã xoá tài khoản và dữ liệu trên máy chủ" : (r.error || "Không xoá được"), !r.ok);
+  await loadAuth();
+};
+async function loadAdmin() {
+  const r = await api("/api/admin/users");
+  if (!r.ok) { $("#admin-table").innerHTML = `<tr><td class="muted">${esc(r.error)}</td></tr>`; return; }
+  const d = v => v ? new Date(v).toLocaleString("vi-VN") : "–";
+  $("#admin-table").innerHTML = `<thead><tr><th>Email</th><th>Tên</th><th>Đăng ký</th><th>Lần cuối</th>
+    <th>Hôm nay</th><th>Tổng điểm</th><th>Hạn mức/ngày</th><th>Khoá</th><th></th></tr></thead><tbody>` +
+    r.data.map(u => `<tr data-id="${u.id}"><td><b>${esc(u.email || "")}</b>${u.is_admin ? " ★" : ""}</td>
+      <td>${esc(u.full_name || "")}</td><td>${d(u.created_at)}</td><td>${d(u.last_seen)}</td>
+      <td>${u.used_today}</td><td>${u.used_total}</td>
+      <td><input type="number" min="0" step="50" value="${u.daily_quota}"></td>
+      <td><input type="checkbox" ${u.banned ? "checked" : ""} ${u.is_admin ? "disabled" : ""}></td>
+      <td><button class="link" data-a="save">Lưu</button> ${u.is_admin ? "" : '· <button class="link" data-a="del">Xoá</button>'}</td>
+    </tr>`).join("") + "</tbody>";
+}
+$("#btn-admin-reload").onclick = loadAdmin;
+$("#admin-table").addEventListener("click", async e => {
+  const b = e.target.closest("[data-a]"); if (!b) return;
+  const tr = b.closest("tr"), id = tr.dataset.id;
+  if (b.dataset.a === "save") {
+    const [q, ban] = $$("input", tr);
+    const r = await api("/api/admin/set", {id, quota: q.value, banned: ban.checked});
+    toast(r.ok ? "Đã lưu" : r.error, !r.ok);
+  } else if (b.dataset.a === "del") {
+    if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "Chắc chắn?"; return; }
+    const r = await api("/api/admin/delete", {id});
+    toast(r.ok ? "Đã xoá người dùng" : r.error, !r.ok);
+    loadAdmin();
+  }
+});
+
+async function start() { await loadSummary(); loadProjects(); poll(); }
+(async () => {
+  const a = await loadAuth(true);
+  if (!a.configured || a.logged_in) start();
+  setInterval(() => { if (AUTH && AUTH.logged_in) loadAuth(); }, 60000);   // cập nhật điểm mỗi phút
+})();

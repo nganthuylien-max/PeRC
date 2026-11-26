@@ -16,7 +16,14 @@
     <button data-page="columns"><i>3</i>Thiết kế cột<span class="dot" id="dot-columns"></span></button>
     <button data-page="drawings"><i>4</i>Bản vẽ<span class="dot" id="dot-drawings"></span></button>
     <button data-page="quantity"><i>5</i>Khối lượng<span class="dot" id="dot-quantities"></span></button>
+    <button data-page="account" class="nav-sub"><i>◉</i>Tài khoản</button>
+    <button data-page="admin" class="nav-sub" id="nav-admin" hidden><i>★</i>Quản trị</button>
   </nav>
+  <div class="acct" id="acct" hidden>
+    <div class="acct-mail" id="acct-mail"></div>
+    <div class="credit"><i id="credit-bar"></i></div>
+    <div class="acct-txt" id="acct-txt"></div>
+  </div>
   <div class="model" id="model-name">Chưa có dữ liệu</div>
 </aside>
 
@@ -133,7 +140,41 @@
       <table class="qty" id="qty-table"></table></div>
     <div class="card"><h3>Bê tông và cốt thép theo tầng</h3><div id="qty-chart" class="chart"></div></div>
   </section>
+
+  <!-- Tài khoản -->
+  <section class="page" id="page-account">
+    <header><h1>Tài khoản</h1><p>Đăng nhập bằng Google qua Supabase, hạn mức điểm theo ngày.</p></header>
+    <div class="stats" id="acct-stats"></div>
+    <div class="card"><h3>Điểm của từng tác vụ</h3><table class="qty" id="cost-table"></table>
+      <p class="muted" style="font-size:12px">Hạn mức làm mới lúc 0h (giờ Việt Nam). Mất mạng vẫn dùng được tối đa 3 ngày kể từ lần xác minh gần nhất.</p></div>
+    <div class="card"><h3>Điều khoản sử dụng</h3><div class="terms" id="terms-text"></div></div>
+    <div class="card row">
+      <button class="ghost" id="btn-logout">Đăng xuất</button>
+      <span class="grow"></span>
+      <button class="ghost del" id="btn-delete-me">Xoá tài khoản và dữ liệu của tôi</button>
+    </div>
+  </section>
+
+  <!-- Quản trị -->
+  <section class="page" id="page-admin">
+    <header class="row"><div class="grow"><h1>Quản trị</h1><p>Danh sách người dùng, hạn mức, khoá tài khoản.</p></div>
+      <button class="ghost" id="btn-admin-reload">Tải lại</button></header>
+    <div class="table-wrap"><table id="admin-table"></table></div>
+  </section>
+
 </main>
+
+<!-- Màn hình đăng nhập -->
+<div id="login" hidden>
+  <div class="login-box">
+    <div class="logo big">Pe<b>RC</b></div>
+    <p class="muted">Thiết kế cốt thép dầm, cột theo TCVN 5574:2018 – kết nối ETABS</p>
+    <button class="primary google" id="btn-login"><span class="g">G</span> Đăng nhập bằng Google</button>
+    <label class="agree"><input type="checkbox" id="agree"> Tôi đồng ý với <a href="#" id="show-terms">Điều khoản sử dụng</a></label>
+    <div class="muted small" id="login-msg">Đăng nhập 1 lần, app tự giữ đăng nhập trên máy này.</div>
+    <div class="terms" id="login-terms" hidden></div>
+  </div>
+</div>
 
 <!-- Thanh tác vụ + nhật ký -->
 <footer id="job">

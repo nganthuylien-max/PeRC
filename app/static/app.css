@@ -172,3 +172,28 @@ table.tl tr.dg td { font-style: italic; font-size: 12.5px; color: #4a5263; paddi
 table.tl tr.dg td.t { padding-left: 26px; }
 table.tl tbody tr { cursor: default; }
 table.tl.hide tr.dg { display: none; }
+
+/* tài khoản */
+nav button.nav-sub { margin-top: 0; font-size: 13px; color: #9aa6ba; }
+nav button.nav-sub:first-of-type { margin-top: 14px; border-top: 1px solid #263044; border-radius: 0; padding-top: 14px; }
+.acct { padding: 12px 20px; border-top: 1px solid #263044; font-size: 12px; }
+.acct-mail { color: #fff; overflow-wrap: anywhere; margin-bottom: 6px; }
+.credit { height: 6px; border-radius: 3px; background: #2b3850; overflow: hidden; }
+.credit i { display: block; height: 100%; background: #4cc38a; }
+.acct-txt { margin-top: 5px; color: #8995a8; }
+.acct-txt .off { color: #e3a25a; }
+.terms { font-size: 13px; line-height: 1.6; color: #3a4252; max-height: 260px; overflow: auto; }
+.terms ol { margin: 0; padding-left: 18px; }
+button.del { border-color: var(--ng); color: var(--ng); }
+#login { position: fixed; inset: 0; z-index: 20; background: linear-gradient(135deg, #18202e, #23314a); display: grid; place-items: center; }
+#login[hidden] { display: none; }
+.login-box { background: #fff; border-radius: 12px; padding: 34px 38px; width: 440px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+.logo.big { font-size: 44px; font-weight: 300; color: #18202e; }
+.logo.big b { color: var(--accent); font-weight: 700; }
+.login-box .google { width: 100%; padding: 12px; font-size: 15px; margin: 18px 0 12px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.login-box .g { background: #fff; color: var(--accent); width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; }
+.agree { display: block; font-size: 13px; margin-bottom: 10px; }
+.small { font-size: 12px; }
+.login-box .terms { text-align: left; margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+#admin-table input[type=number] { width: 80px; font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; }
+#admin-table tbody tr { cursor: default; }

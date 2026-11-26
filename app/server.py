@@ -18,6 +18,7 @@ import time
 from flask import Flask, Response, abort, jsonify, request, send_from_directory
 
 from app import projects as P
+from app.auth import SESSION, TASK_COST
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))     # thư mục D:\RCDesign
 sys.path.insert(0, ROOT)
@@ -339,9 +340,18 @@ def run(task):
         if not story:
             return jsonify({"ok": False, "error": "Chọn tầng cần xuất bản vẽ."})
         args = [story]
+    if JOB.state == "running":
+        return jsonify({"ok": False, "error": "Đang chạy một tác vụ khác, đợi xong đã."})
+    note = ""
+    if SESSION.public()["configured"]:                   # có cấu hình Supabase -> bắt buộc đăng nhập + trừ điểm
+        if not SESSION.public()["logged_in"]:
+            return jsonify({"ok": False, "error": "Chưa đăng nhập."})
+        allowed, note = SESSION.consume(task)
+        if not allowed:
+            return jsonify({"ok": False, "error": note})
     if not JOB.start(task, args):
         return jsonify({"ok": False, "error": "Đang chạy một tác vụ khác, đợi xong đã."})
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "note": note, "cost": TASK_COST.get(task, 0)})
 
 
 @app.get("/api/job")
@@ -438,3 +448,61 @@ def tienluong():
     if rows and "details" not in rows[0] and st:
         return jsonify({"items": work_items(rows, None, order), "old": True})
     return jsonify({"items": work_items(rows, st, order), "old": False})
+
+
+# ------------------------------------------------------------------ tài khoản (đăng nhập Google qua Supabase)
+@app.get("/api/auth/status")
+def auth_status():
+    if request.args.get("refresh") == "1" or SESSION.status is None:
+        if SESSION.public()["configured"] and not SESSION.pending:
+            SESSION.refresh_status()
+    return jsonify(SESSION.public())
+
+
+@app.post("/api/auth/login")
+def auth_login():
+    if not SESSION.public()["configured"]:
+        return jsonify({"ok": False, "error": "Chưa cấu hình Supabase (app/auth.py)."})
+    SESSION.start_login()
+    return jsonify({"ok": True})
+
+
+@app.post("/api/auth/logout")
+def auth_logout():
+    SESSION.logout()
+    return jsonify({"ok": True})
+
+
+@app.post("/api/auth/delete")
+def auth_delete():
+    """Xoá tài khoản + toàn bộ dữ liệu sử dụng trên máy chủ (dữ liệu dự án trên máy vẫn giữ)."""
+    try:
+        r = SESSION.rpc("delete_my_data")
+    except Exception as e:                                  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)})
+    SESSION.logout()
+    return jsonify({"ok": bool(r and r.get("ok"))})
+
+
+def _admin(fn, params=None):
+    try:
+        return jsonify({"ok": True, "data": SESSION.rpc(fn, params)})
+    except Exception as e:                                  # noqa: BLE001
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.get("/api/admin/users")
+def admin_users():
+    return _admin("admin_list_users")
+
+
+@app.post("/api/admin/set")
+def admin_set():
+    b = request.get_json(silent=True) or {}
+    return _admin("admin_set_user", {"uid": b["id"], "quota": int(b["quota"]), "is_banned": bool(b["banned"])})
+
+
+@app.post("/api/admin/delete")
+def admin_delete():
+    b = request.get_json(silent=True) or {}
+    return _admin("admin_delete_user", {"uid": b["id"]})
