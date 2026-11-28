@@ -72,7 +72,7 @@ def design_beam(beam, sec, conc, steel, steel_w, cover=25):
                for z in ZONES)
     if util > 1.0:
         warnings.append(f"Hệ số sử dụng {util:.2f} > 1: tiết diện {b:.0f}×{h:.0f} không đủ – "
-                        "tăng tiết diện hoặc khai báo vùng cứng đầu dầm (mômen đang lấy tại tim gối)")
+                        "tăng tiết diện dầm")
     ok = util <= 1.0 and stir["ok"] and not any("vượt" in w for w in warnings)
     layout = {"top": {"cont": list(top["cont"]), "add": {z: list(v) for z, v in top["add"].items()}},
               "bot": {"cont": list(bot["cont"]), "add": {z: list(v) for z, v in bot["add"].items()}},

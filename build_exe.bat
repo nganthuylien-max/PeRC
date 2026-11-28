@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 REM ============================================================
-REM  Đóng gói PeRC thành PeRC.exe (thư mục dist\PeRC) và file PeRC_v1.0.0.zip
+REM  Đóng gói PeRC thành PeRC.exe (thư mục dist\PeRC) và file PeRC_v1.0.1.zip
 REM  Chạy:  build_exe.bat     (đứng ở thư mục D:\RCDesign)
 REM ============================================================
 cd /d "%~dp0"
@@ -33,13 +33,14 @@ echo [2/3] Dong goi...
   --hidden-import win32ctypes.core ^
   run_app.py || goto :err
 
-echo [3/3] Nen thanh PeRC_v1.0.0.zip...
-if exist PeRC_v1.0.0.zip del PeRC_v1.0.0.zip
-powershell -NoProfile -Command "Compress-Archive -Path 'dist\PeRC' -DestinationPath 'PeRC_v1.0.0.zip'" || goto :err
+echo [3/3] Nen thanh PeRC_v1.0.1.zip...
+if exist PeRC_v1.0.1.zip del PeRC_v1.0.1.zip
+timeout /t 5 /nobreak >nul
+tar -a -c -f PeRC_v1.0.1.zip -C dist PeRC || goto :err
 
 echo.
 echo XONG. Chay thu: dist\PeRC\PeRC.exe
-echo File phat hanh: PeRC_v1.0.0.zip
+echo File phat hanh: PeRC_v1.0.1.zip
 pause
 exit /b 0
 

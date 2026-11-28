@@ -6,6 +6,9 @@ from .model import LAYERS
 
 
 # ============================================================================ SVG
+EXT_LEN = 3.0        # đường gióng kích thước: dài cố định 3 mm giấy phía đối tượng (như bản vẽ mẫu)
+
+
 def dim_text_pos(e, S):
     """Vị trí chữ của đường kích thước (giữa đoạn, trên đường; hoặc bên kia nếu flip)."""
     (x1, y1), (x2, y2), (bx, by) = e["p1"], e["p2"], e["base"]
@@ -21,14 +24,16 @@ def _expand_dim(e, S):
     if not e["vertical"]:
         sgn = 1 if by > y1 else -1
         for x, y in ((x1, y1), (x2, y2)):
-            out.append(("line", (x, y + sgn * 1.0 * S), (x, by + sgn * 1.5 * S)))   # đường gióng
+            y0 = by - sgn * min(EXT_LEN * S, max(abs(by - y) - 1.0 * S, 0))      # đường gióng ngắn cố định
+            out.append(("line", (x, y0), (x, by + sgn * 1.5 * S)))
             out.append(("line", (x - S, by - S), (x + S, by + S)))                  # gạch chéo
         out.append(("line", (min(x1, x2) - 1.5 * S, by), (max(x1, x2) + 1.5 * S, by)))
         out.append(("text", dim_text_pos(e, S), f"{abs(x2 - x1) * e.get('lfac', 1):.0f}", 0))
     else:
         sgn = 1 if bx > x1 else -1
         for x, y in ((x1, y1), (x2, y2)):
-            out.append(("line", (x + sgn * 1.0 * S, y), (bx + sgn * 1.5 * S, y)))
+            x0 = bx - sgn * min(EXT_LEN * S, max(abs(bx - x) - 1.0 * S, 0))
+            out.append(("line", (x0, y), (bx + sgn * 1.5 * S, y)))
             out.append(("line", (bx - S, y - S), (bx + S, y + S)))
         out.append(("line", (bx, min(y1, y2) - 1.5 * S), (bx, max(y1, y2) + 1.5 * S)))
         out.append(("text", dim_text_pos(e, S), f"{abs(y2 - y1) * e.get('lfac', 1):.0f}", 90))
@@ -120,6 +125,7 @@ def to_dxf(D, path):
             "dimlfac": lf,        # hệ số đo: hình phóng to k lần thì ghi số thật = đo × 1/k
             "dimtxt": 2.2, "dimtsz": 1.0, "dimasz": 1.0,           # chữ 2.2, đầu mút kiểu gạch chéo
             "dimexe": 1.5, "dimexo": 1.0, "dimgap": 0.6,
+            "dimfxlon": 1, "dimfxl": EXT_LEN,                      # đường gióng ngắn, dài cố định
             "dimtad": 1, "dimdec": 0, "dimtih": 0, "dimtoh": 0,     # chữ nằm trên đường kích thước
             "dimtmove": 2,                                          # cho phép đặt chữ tự do
             "dimclrd": 4, "dimclre": 4, "dimclrt": 4})

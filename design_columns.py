@@ -4,7 +4,7 @@ import time
 from collections import Counter
 
 from core.materials import Concrete, Steel
-from core.column_design import design_column
+from core.column_design import design_column, unify_stack
 
 with open("project.json", encoding="utf-8") as f:
     p = json.load(f)
@@ -29,14 +29,20 @@ for k, col in enumerate(p["columns"], 1):
     if k % 50 == 0:
         print(f"  {k}/{len(p['columns'])} cột – {time.time() - t0:.0f} s")
 
+print("\nĐồng bộ bố trí thép theo trục cột (cùng số thanh mỗi cạnh để nối chồng thẳng hàng)...")
+n_changed = unify_stack(results, p, concrete_of, steel, steel_w)
+print(f"  Đã đổi {n_changed} tầng-cột sang bố trí chung của đoạn cột cùng tiết diện")
+
 with open("design_columns.json", "w", encoding="utf-8") as f:
     json.dump(results, f, ensure_ascii=False, default=float)
 
 ok = sum(r["ok"] for r in results)
 print(f"\nThiết kế {len(results)} cột trong {time.time() - t0:.0f} s: {ok} ĐẠT, {len(results) - ok} KHÔNG ĐẠT")
 
-print("\nThép cột theo tầng (cột C1):")
-for r in sorted([r for r in results if r["label"] == "C1"], key=lambda r: -int(r["story"][5:]))[::4]:
+print(f"\nThép cột theo tầng (cột {results[0]['label'] if results else ''}):")
+order = {s["name"]: i for i, s in enumerate(p.get("stories", []))}
+first = results[0]["label"] if results else ""
+for r in sorted([r for r in results if r["label"] == first], key=lambda r: -order.get(r["story"], 0))[::4]:
     L = r["layout"]
     print(f"  {r['story']:8} {r['section']:7} {r['n_bars']:2}Ø{L['d']}  μ = {r['mu']*100:.2f}%  "
           f"hệ số {r['util']:.3f}  đai Ø{L['tie']['d']}a{L['tie']['s_end']}/{L['tie']['s_mid']}  "

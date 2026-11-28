@@ -46,15 +46,17 @@ def choose_stirrups(V_end, V_mid, b, h, h0, conc, steel_w, d_main):
     d_min = 8 if hi else 6
     end_limit = min(0.5 * h0, 250 if hi else 300)
     mid_limit = min(0.75 * h0, 400 if hi else 500)
-    for lim in (MARGIN, 1.0):                 # ưu tiên chừa dự phòng; không được thì chấp nhận hệ số ≤ 1
+    # thứ tự ưu tiên: chừa dự phòng 3%, bước đai >= 100 (dễ thi công: tăng đường kính trước khi giảm bước dưới 100)
+    for lim, s_min in ((MARGIN, 100), (1.0, 100), (MARGIN, 75), (1.0, 75)):
         for d in (6, 8, 10, 12, 14):
             if d < d_min:
                 continue
-            s_end = next((s for s in (300, 250, 200, 150, 100) if s <= end_limit
+            s_end = next((s for s in (300, 250, 200, 150, 100, 75) if s_min <= s <= end_limit
                           and shear_check(V_end, b, h0, conc, steel_w, d, legs, s)["util"] <= lim), None)
-            if s_end is None:
+            # giữa nhịp kiểm tra RIÊNG với lực cắt giữa nhịp (có thể lớn hơn ở gối khi có lực tập trung)
+            s_mid = next((s for s in (500, 450, 400, 350, 300, 250, 200, 150, 100, 75) if s_min <= s <= mid_limit
+                          and shear_check(V_mid, b, h0, conc, steel_w, d, legs, s)["util"] <= lim), None)
+            if s_end is None or s_mid is None:
                 continue                          # đường kính này không đủ -> thử lớn hơn
-            s_mid = next((s for s in (500, 450, 400, 350, 300, 250, 200, 150, 100) if s_end <= s <= mid_limit
-                          and shear_check(V_mid, b, h0, conc, steel_w, d, legs, s)["util"] <= lim), s_end)
-            return {"d": d, "legs": legs, "s_end": s_end, "s_mid": s_mid, "ok": True}
+            return {"d": d, "legs": legs, "s_end": min(s_end, s_mid), "s_mid": s_mid, "ok": True}
     return {"d": 14, "legs": legs, "s_end": 100, "s_mid": 100, "ok": False}

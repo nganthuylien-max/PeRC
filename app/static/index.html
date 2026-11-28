@@ -107,19 +107,49 @@
   <!-- 4. Bản vẽ -->
   <section class="page" id="page-drawings">
     <header><h1>Xuất bản vẽ</h1>
-      <p>Mỗi tầng xuất 1 file DXF (AutoCAD): mặt cắt dọc + 3 mặt cắt ngang mỗi dầm, mặt cắt mỗi cột, đủ kích thước và ký hiệu thép.</p></header>
-    <div class="card row">
-      <select class="story-select" id="draw-story"></select>
-      <button class="primary" id="btn-draw">Xuất DXF tầng này</button>
-      <span class="muted grow">Dầm không đạt (không xếp đủ thép) sẽ không có bản vẽ.</span>
+      <p>File DXF (AutoCAD): mỗi dầm / mỗi cột nằm trong 1 khung bản vẽ riêng (khổ A3–A0, có khung tên), các khung đặt cách xa nhau.</p></header>
+
+    <div class="card">
+      <h3>Dầm</h3>
+      <div class="row">
+        <span>Tầng</span><select class="story-select" data-noall="1" id="db-story"></select>
+        <input id="db-find" placeholder="Tìm dầm, ví dụ B10" style="width:170px">
+        <select id="db-beam"></select>
+        <button class="ghost" id="btn-db-view">Xem</button>
+        <button class="primary" id="btn-db-draw">Xuất DXF</button>
+      </div>
+      <div class="row draw-opts">
+        <span>Khổ giấy</span><select id="db-paper"><option value="">Tự chọn</option><option>A3</option><option>A2</option><option>A1</option><option>A0</option></select>
+        <span>Mặt cắt dọc</span><select id="db-tl"><option value="20">1:20</option><option value="25" selected>1:25</option><option value="30">1:30</option><option value="40">1:40</option><option value="50">1:50</option><option value="75">1:75</option><option value="100">1:100</option></select>
+        <span>Mặt cắt ngang</span><select id="db-tlmc"><option value="10" selected>1:10</option><option value="15">1:15</option><option value="20">1:20</option><option value="25">1:25</option></select>
+      </div>
+      <p class="muted" style="font-size:12px;margin:8px 0 0">Khổ giấy "tự chọn": lấy khổ nhỏ nhất vừa bản vẽ; chọn khổ nhỏ mà không vừa ở tỉ lệ đã chọn thì app tự nâng khổ và báo trong nhật ký.
+        Chọn "Tất cả dầm của tầng" để xuất mọi dầm của tầng vào 1 file (mỗi dầm 1 khung).
+        Dầm không xếp đủ thép thì không có bản vẽ.</p>
     </div>
+
+    <div class="card">
+      <h3>Cột</h3>
+      <div class="row">
+        <span>Tầng</span><select id="dc-story"></select>
+        <input id="dc-find" placeholder="Tìm cột, ví dụ C4" style="width:170px">
+        <select id="dc-col"></select>
+        <button class="ghost" id="btn-dc-view">Xem</button>
+        <button class="primary" id="btn-dc-draw">Xuất DXF</button>
+      </div>
+      <div class="row draw-opts">
+        <span>Khổ giấy</span><select id="dc-paper"><option value="">Tự chọn</option><option>A3</option><option>A2</option><option>A1</option><option>A0</option></select>
+        <span>Mặt cắt dọc</span><select id="dc-tl"><option value="20">1:20</option><option value="25" selected>1:25</option><option value="30">1:30</option><option value="40">1:40</option><option value="50">1:50</option><option value="75">1:75</option><option value="100">1:100</option></select>
+        <span>Mặt cắt ngang</span><select id="dc-tlmc"><option value="10">1:10</option><option value="15">1:15</option><option value="20" selected>1:20</option><option value="25">1:25</option><option value="30">1:30</option></select>
+      </div>
+      <p class="muted" style="font-size:12px;margin:8px 0 0">Mặt cắt dọc cột từng tầng (nối chồng, bẻ xiên 1:6, nút mái) + 3 mặt cắt ngang + bảng thống kê thép.
+        Chọn 1 tầng + "Tất cả cột của tầng": mọi cột của tầng vào 1 file. Chọn 1 cột + "Tất cả tầng": mỗi tầng 1 file.</p>
+    </div>
+
     <div class="card row">
-      <select id="draw-col"></select>
-      <select id="draw-col-story"></select>
-      <button class="ghost" id="btn-col-view">Xem</button>
-      <button class="primary" id="btn-col-draw">Xuất DXF mặt cắt dọc cột</button>
-      <span class="muted grow">Mỗi bản vẽ 1 tầng, từ sàn dưới lên sàn trên: nối chồng, bẻ xiên 1:6 ở nút, nút mái theo 10.4.11,
-        mặt cắt ngang và mặt cắt vùng nối. Chọn "Tất cả tầng" thì mỗi tầng xuất 1 file DXF riêng.</span>
+      <span>Cả tầng (dầm + cột)</span><select class="story-select" id="draw-story"></select>
+      <button class="ghost" id="btn-draw">Xuất DXF cả tầng</button>
+      <span class="muted grow" style="font-size:12px">Dùng khổ giấy, tỉ lệ đã chọn ở mục Dầm và mục Cột.</span>
     </div>
     <div class="card"><h3>File đã xuất</h3><div id="draw-list"></div></div>
   </section>

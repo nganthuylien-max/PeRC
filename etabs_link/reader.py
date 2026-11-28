@@ -14,6 +14,29 @@ def read_stories(model):
     return stories
 
 
+def read_grids(model):
+    """Lưới trục: [{"id": "A", "axis": "X" | "Y", "coord": mm}]. Không đọc được thì trả về [] (app tự suy trục từ cột)."""
+    try:
+        rows = read_table(model, "Grid Definitions - Grid Lines")
+    except Exception as e:
+        print("  Không đọc được lưới trục:", e)
+        return []
+    out = []
+    for r in rows:
+        kt = next((k for k in r if "type" in k.lower()), None)
+        ki = next((k for k in r if k.lower() in ("id", "gridid", "grid id", "label")), None)
+        ko = next((k for k in r if "ordinate" in k.lower() or k.lower() in ("coord", "x", "y")), None)
+        if not (kt and ki and ko):
+            continue
+        t = str(r[kt]).strip().upper()
+        if t[:1] in ("X", "Y"):
+            try:
+                out.append({"id": str(r[ki]).strip(), "axis": t[0], "coord": to_float(r[ko])})
+            except ValueError:
+                pass
+    return out
+
+
 def read_materials(model):
     return {r["Material"]: {"fc": to_float(r["Fc"])}
             for r in read_table(model, "Material Properties - Concrete Data")}
@@ -120,28 +143,65 @@ def zone_of(station, L):
     return "L" if r <= 0.25 else ("R" if r >= 0.75 else "M")
 
 
-def read_beam_forces(model, beams, combos):
+def _interp(pts, x):
+    """Nội suy tuyến tính (M, V) tại tọa độ x trên dãy điểm (station, M, V) đã sắp xếp."""
+    for (s0, m0, v0), (s1, m1, v1) in zip(pts, pts[1:]):
+        if s0 <= x <= s1:
+            t = (x - s0) / (s1 - s0) if s1 > s0 else 0.0
+            return m0 + t * (m1 - m0), v0 + t * (v1 - v0)
+    return None
+
+
+def face_samples(pts, L, fL, fR):
+    """Các điểm dùng để thiết kế: nội lực TẠI MÉP GỐI (nội suy) và mọi điểm giữa 2 mép gối.
+    Phần dầm nằm trong cột/vách không cần thiết kế theo mômen ở tim gối (thiên về lãng phí).
+    Trả về [(vùng L/M/R, M, V)], vùng chia theo nhịp thông thủy: 1/4 – 1/2 – 1/4."""
+    pts = sorted(pts)
+    a, c = fL, L - fR
+    if c - a < 0.3 * L:                                  # gối quá rộng so với nhịp -> dùng tim gối
+        a, c = 0.0, L
+    out = []
+    for x in (a, c):
+        v = _interp(pts, x)
+        if v:
+            out.append((x, *v))
+    out += [p for p in pts if a < p[0] < c]
+    Lc = c - a
+    res = []
+    for s, m, v in out:
+        r = (s - a) / Lc if Lc else 0.5
+        res.append(("L" if r <= 0.25 else ("R" if r >= 0.75 else "M"), m, v))
+    return res
+
+
+def read_beam_forces(model, beams, combos, faces=None):
     """Đọc TỪNG tổ hợp, chỉ giữ giá trị bao theo vùng -> tiết kiệm bộ nhớ.
+    faces = {id dầm: (nửa bề rộng gối trái, nửa bề rộng gối phải)} -> lấy nội lực tại mép gối.
     Quy ước ETABS: M3 < 0 căng thớ trên, M3 > 0 căng thớ dưới."""
+    faces = faces or {}
     by_id = {b["id"]: b for b in beams}
     for b in beams:
         b["env"] = {z: {"Mtop": 0.0, "Mtop_combo": "", "Mbot": 0.0, "Mbot_combo": "",
                         "V": 0.0, "V_combo": ""} for z in ("L", "M", "R")}
+        b["design_at"] = "mép gối" if faces.get(b["id"], (0, 0)) != (0, 0) else "tim gối"
     for k, combo in enumerate(combos, 1):
         rows = read_table(model, "Element Forces - Beams", combos=[combo])
-        for r in rows:
-            b = by_id.get(r["UniqueName"])
-            if not b:
-                continue
-            e = b["env"][zone_of(to_float(r["Station"]), b["L"])]
-            m = to_float(r["M3"]) / 1e6          # N.mm -> kN.m
-            v = abs(to_float(r["V2"])) / 1e3     # N -> kN
-            if -m > e["Mtop"]:
-                e["Mtop"], e["Mtop_combo"] = -m, combo
-            if m > e["Mbot"]:
-                e["Mbot"], e["Mbot_combo"] = m, combo
-            if v > e["V"]:
-                e["V"], e["V_combo"] = v, combo
+        groups = {}
+        for r in rows:                                   # gom theo dầm (và Max/Min nếu tổ hợp có phổ phản ứng)
+            if r["UniqueName"] in by_id:
+                groups.setdefault((r["UniqueName"], r.get("StepType", "")), []).append(
+                    (to_float(r["Station"]), to_float(r["M3"]) / 1e6, abs(to_float(r["V2"])) / 1e3))
+        for (uid, _), pts in groups.items():
+            b = by_id[uid]
+            fL, fR = faces.get(uid, (0.0, 0.0))
+            for z, m, v in face_samples(pts, b["L"], fL, fR):
+                e = b["env"][z]
+                if -m > e["Mtop"]:
+                    e["Mtop"], e["Mtop_combo"] = -m, combo
+                if m > e["Mbot"]:
+                    e["Mbot"], e["Mbot_combo"] = m, combo
+                if v > e["V"]:
+                    e["V"], e["V_combo"] = v, combo
         print(f"  dầm: {combo} ({k}/{len(combos)}) – {len(rows)} dòng")
 
 

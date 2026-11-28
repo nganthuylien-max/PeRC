@@ -83,6 +83,48 @@ def _group(items, key):
     return g
 
 
+COL_HOOK = 12     # móc thép cột ở chân móng / đỉnh mái (theo d) – khớp bản vẽ mặt cắt dọc cột
+
+
+def column_items(r, s, first_story, cover_col=30, top_story=False):
+    """Thép của 1 cột 1 tầng, dùng CHUNG cho bóc khối lượng và bảng thống kê trên bản vẽ:
+    [{"mark", "kind", "d", "n", "length" (mm), "shape"}].
+    Thép dọc: chân tầng 1 neo xuống móng 40d + móc 12d; tầng trên cùng dừng dưới đỉnh mái + móc 12d;
+    các tầng khác vươn lên tầng trên 1 đoạn nối chồng (như bản vẽ)."""
+    L = r["layout"]
+    d, dt, tie = L["d"], L["tie"]["d"], L["tie"]
+    lap = tie.get("lap", LAP * d)
+    hk0 = COL_HOOK * d if first_story else 0
+    bot = LAP * d if first_story else 0                                          # neo xuống móng
+    if top_story:
+        straight, hk1 = bot + r["L"] - cover_col - d / 2, COL_HOOK * d
+    else:
+        straight, hk1 = bot + r["L"] + lap, 0
+    items = [{"mark": 1, "kind": "long", "d": d, "n": r["n_bars"], "length": round(straight + hk0 + hk1),
+              "shape": ("bar", hk0, round(straight), hk1, False)}]
+    bw, bh = s["b"] - 2 * cover_col, s["h"] - 2 * cover_col
+    per = 2 * bw + 2 * bh + 20 * dt                                              # đai chu vi + 2 móc
+    # đai móc giằng theo 10.3.4.5 (thanh cách thanh, chỗ uốn cách nhau <= 400 mm)
+    cb = crossties(L["nb"], s["b"], cover_col, dt, d)
+    ch = crossties(L["nh"], s["h"], cover_col, dt, d)
+    # số đai: vùng nối chồng (s_lap) + phần còn lại (s_mid); thiết kế cũ có vùng đầu cột s_end
+    lap = tie.get("lap", 0) if not first_story else 0
+    s_lap = min(tie.get("s_lap", tie["s_end"]), tie["s_end"])
+    l_end = max(s["b"], s["h"], r["L"] / 6, 500) if tie["s_end"] < tie["s_mid"] else 0
+    cnt = (math.ceil(lap / s_lap) + math.ceil(l_end / tie["s_end"])
+           + math.ceil(max(r["L"] - lap - l_end, 0) / tie["s_mid"]))
+    items.append({"mark": 2, "kind": "tie", "d": dt, "n": cnt, "length": per, "shape": ("stir", bw, bh, 10 * dt)})
+    if cb:
+        items.append({"mark": 3, "kind": "cross", "face": "b", "d": dt, "n": cnt * cb, "length": bh + 20 * dt,
+                      "shape": ("bar", 10 * dt, bh, 10 * dt, True)})
+    if ch:
+        items.append({"mark": 3 if not cb else 4, "kind": "cross", "face": "h", "d": dt, "n": cnt * ch, "length": bw + 20 * dt,
+                      "shape": ("bar", 10 * dt, bw, 10 * dt, True)})
+    for it in items:
+        it["kg"] = it["n"] * it["length"] / 1e3 * unit_weight(it["d"])
+    return items
+
+
 def takeoff(p, beams_res, cols_res, supports, opt=DEFAULTS, cover_col=30):
     fs, asec = p["frame_sections"], p["area_sections"]
     t_slab = slab_thickness_by_story(p)
@@ -97,6 +139,11 @@ def takeoff(p, beams_res, cols_res, supports, opt=DEFAULTS, cover_col=30):
 
     # ---------------------------------------------------------------- CỘT
     first_story = p["stories"][0]["name"]                # tầng dưới cùng: không có nối chồng ở chân cột
+    order = {st["name"]: i for i, st in enumerate(p["stories"])}
+    top_of = {}                                          # tầng cao nhất của từng trục cột
+    for r in cols_res:
+        if order.get(r["story"], -1) > order.get(top_of.get(r["label"]), -1):
+            top_of[r["label"]] = r["story"]
     for story, cols in _group(cols_res, "story").items():
         by_sec = defaultdict(lambda: [0, 0.0])
         sec_steel = defaultdict(lambda: defaultdict(float))
@@ -104,23 +151,11 @@ def takeoff(p, beams_res, cols_res, supports, opt=DEFAULTS, cover_col=30):
             s = fs[r["section"]]
             b, h, H = s["b"] / 1e3, s["h"] / 1e3, r["L"] / 1e3
             steel = defaultdict(float)
-            L = r["layout"]
-            d, dt, tie = L["d"], L["tie"]["d"], L["tie"]
-            n = r["n_bars"]
-            kg_long = n * (r["L"] + LAP * d) / 1e3 * unit_weight(d)                    # thép dọc + nối chồng
+            items = column_items(r, s, story == first_story, cover_col, top_of.get(r["label"]) == story)
+            d, dt = items[0]["d"], items[1]["d"]
+            kg_long = items[0]["kg"]
+            kg_tie = sum(it["kg"] for it in items[1:])
             steel[group_of(d)] += kg_long
-            per = 2 * (s["b"] - 2 * cover_col) + 2 * (s["h"] - 2 * cover_col) + 20 * dt   # đai chu vi + 2 móc
-            # đai móc giằng theo 10.3.4.5 (thanh cách thanh, chỗ uốn cách nhau ≤ 400 mm)
-            cb = crossties(L["nb"], s["b"], cover_col, dt, d)
-            ch = crossties(L["nh"], s["h"], cover_col, dt, d)
-            cross = cb * (s["h"] - 2 * cover_col) + ch * (s["b"] - 2 * cover_col) + 20 * dt * (cb + ch)
-            # số đai: vùng nối chồng (s_lap) + phần còn lại (s_mid); thiết kế cũ có vùng đầu cột s_end
-            lap = tie.get("lap", 0) if story != first_story else 0
-            s_lap = min(tie.get("s_lap", tie["s_end"]), tie["s_end"])
-            l_end = max(s["b"], s["h"], r["L"] / 6, 500) if tie["s_end"] < tie["s_mid"] else 0
-            cnt = (math.ceil(lap / s_lap) + math.ceil(l_end / tie["s_end"])
-                   + math.ceil(max(r["L"] - lap - l_end, 0) / tie["s_mid"]))
-            kg_tie = cnt * (per + cross) / 1e3 * unit_weight(dt)
             steel[group_of(dt)] += kg_tie
             book.add(story, "Cột", b * h * H, 2 * (b + h) * H, steel)
             key = (r["section"], b, h, H)
@@ -147,7 +182,7 @@ def takeoff(p, beams_res, cols_res, supports, opt=DEFAULTS, cover_col=30):
         for r in bms:
             s = fs[r["section"]]
             b, h = s["b"] / 1e3, s["h"] / 1e3
-            (hL, _), (hR, _) = supports[r["id"]]
+            hL, hR = supports[r["id"]][0][0], supports[r["id"]][1][0]
             Lc = max(r["L"] - hL / 2 - hR / 2, 0.5 * r["L"]) / 1e3
             steel = defaultdict(float)
             if r["layout"]:

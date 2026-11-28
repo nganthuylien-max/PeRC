@@ -27,8 +27,45 @@ if getattr(sys, "frozen", False):        # bản PeRC.exe: dự án lưu cạnh 
     ROOT = os.path.dirname(sys.executable)
 else:                                    # chạy từ mã nguồn: thư mục D:\RCDesign
     ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PROJECTS = os.path.join(ROOT, "projects")
-ACTIVE = os.path.join(PROJECTS, "active.txt")
+BASE = os.path.join(ROOT, "projects")
+USERS = os.path.join(BASE, "users")      # mỗi tài khoản 1 thư mục: projects/users/<email>/
+_user = ""                               # email đang đăng nhập (server.py gán mỗi lần có yêu cầu)
+
+
+def set_user(email):
+    """Chọn kho dự án của tài khoản đang đăng nhập. Người khác không thấy dự án của nhau."""
+    global _user
+    _user = _safe((email or "").lower())
+
+
+def home():
+    """Thư mục chứa các dự án của tài khoản hiện tại."""
+    h = os.path.join(USERS, _user or "_khach")
+    if not os.path.isdir(h):
+        os.makedirs(h)
+        _claim_legacy(h)
+    return h
+
+
+def _active_file():
+    return os.path.join(home(), "active.txt")
+
+
+def _claim_legacy(h):
+    """Dự án tạo trước khi tách theo tài khoản (nằm thẳng trong projects/) thuộc về
+    tài khoản đăng nhập đầu tiên sau khi cập nhật -> chuyển vào thư mục của tài khoản đó."""
+    if not os.path.isdir(BASE):
+        return
+    for n in os.listdir(BASE):
+        src = os.path.join(BASE, n)
+        if n == "users" or not os.path.isdir(src):
+            continue
+        shutil.move(src, os.path.join(h, n))
+    old = os.path.join(BASE, "active.txt")
+    if os.path.exists(old):
+        shutil.move(old, os.path.join(h, "active.txt"))
+    if os.listdir(h):                                      # đã nhận dự án cũ -> không chép kết quả cũ cho ai nữa
+        open(os.path.join(BASE, ".root_migrated"), "w").close()
 RESULT_FILES = ("project.json", "design_beams.json", "design_columns.json", "quantities.json",
                 "PeRC_KhoiLuong.xlsx")
 
@@ -40,7 +77,7 @@ def _safe(name):
 
 
 def folder(name):
-    return os.path.join(PROJECTS, name)
+    return os.path.join(home(), name)
 
 
 def _now():
@@ -78,27 +115,30 @@ def create(name, note=""):
 def set_active(name):
     if not os.path.isdir(folder(name)):
         raise ValueError(f"Không có dự án '{name}'.")
-    open(ACTIVE, "w", encoding="utf-8").write(name)
+    open(_active_file(), "w", encoding="utf-8").write(name)
 
 
 def active():
     """Tên dự án đang mở. Lần đầu chạy: chuyển kết quả cũ ở thư mục gốc vào 1 dự án."""
-    os.makedirs(PROJECTS, exist_ok=True)
-    if os.path.exists(ACTIVE):
-        name = open(ACTIVE, encoding="utf-8").read().strip()
+    act = _active_file()
+    if os.path.exists(act):
+        name = open(act, encoding="utf-8").read().strip()
         if name and os.path.isdir(folder(name)):
             return name
     existing = list_names()
     if existing:
         set_active(existing[0])
         return existing[0]
-    return migrate_root()
+    if not os.path.exists(os.path.join(BASE, ".root_migrated")) and os.path.exists(os.path.join(ROOT, "project.json")):
+        return migrate_root()                              # máy cũ: kết quả chạy trước đây -> dự án đầu tiên
+    return None                                            # tài khoản mới: chưa có dự án nào
 
 
 def migrate_root():
     """Chép các kết quả đã chạy trước đây (ở D:\\RCDesign) sang dự án đầu tiên. Chép chứ không xoá bản gốc."""
     name, model = "Du an 1", ""
     src = os.path.join(ROOT, "project.json")
+    open(os.path.join(BASE, ".root_migrated"), "w").close()   # chỉ chép 1 lần, cho tài khoản đầu tiên
     if os.path.exists(src):
         try:
             model = json.load(open(src, encoding="utf-8")).get("model_file", "")
@@ -120,9 +160,8 @@ def migrate_root():
 
 
 def list_names():
-    if not os.path.isdir(PROJECTS):
-        return []
-    return sorted((n for n in os.listdir(PROJECTS) if os.path.isdir(folder(n))),
+    h = home()
+    return sorted((n for n in os.listdir(h) if os.path.isdir(folder(n))),
                   key=lambda n: -os.path.getmtime(folder(n)))
 
 
@@ -168,8 +207,11 @@ def duplicate(name):
 
 
 def delete(name):
-    if active() == name and len(list_names()) == 1:
-        raise ValueError("Không xoá được dự án duy nhất. Tạo dự án khác trước.")
     shutil.rmtree(folder(name))
-    if not os.path.exists(ACTIVE) or open(ACTIVE, encoding="utf-8").read().strip() == name:
-        set_active(list_names()[0])
+    act = _active_file()
+    if os.path.exists(act) and open(act, encoding="utf-8").read().strip() == name:
+        rest = list_names()
+        if rest:
+            set_active(rest[0])
+        else:
+            os.remove(act)                                 # xoá hết -> không còn dự án nào đang mở

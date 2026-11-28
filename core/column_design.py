@@ -41,19 +41,24 @@ def high_strength(conc):
     return int(conc.grade[1:]) >= 70
 
 
-def crossties(n_side, side_len, cover=30, dt=8, d=20):
-    """Số thanh giữa cạnh phải nằm ở chỗ uốn của đai (mỗi thanh 1 nhánh đai móc) – TCVN 5574:2018 10.3.4.5:
-    các thanh dọc, ít nhất cách một thanh, nằm tại chỗ uốn của đai; các chỗ uốn cách nhau ≤ 400 mm.
-    Ngoại lệ: mặt bên ≤ 400 mm và ≤ 4 thanh -> 1 đai ôm tất cả (không cần đai móc)."""
+def crosstie_index(n_side, side_len, cover=30, dt=8, d=20):
+    """Chỉ số (0..n_side-1) các thanh giữa cạnh cần 1 nhánh đai móc (đai phụ) – TCVN 5574:2018 10.3.4.5:
+    các thanh dọc, ít nhất cách một thanh, nằm tại chỗ uốn của đai; các chỗ uốn cách nhau <= 400 mm.
+    Ngoại lệ: mặt bên <= 400 mm và <= 4 thanh -> 1 đai ôm tất cả (không cần đai móc)."""
     if n_side <= 2 or (side_len <= 400 and n_side <= 4):
-        return 0
+        return []
     sp = (side_len - 2 * (cover + dt + d / 2)) / (n_side - 1)     # khoảng cách tim các thanh
-    k = 2 if 2 * sp <= 400 else 1                                 # nhảy cách 1 thanh nếu vẫn ≤ 400 mm
-    i, cnt = 0, 0
+    k = 2 if 2 * sp <= 400 else 1                                 # nhảy cách 1 thanh nếu vẫn <= 400 mm
+    out, i = [], 0
     while i + k < n_side - 1:                                     # đi từ góc này sang góc kia
         i += k
-        cnt += 1
-    return cnt
+        out.append(i)
+    return out
+
+
+def crossties(n_side, side_len, cover=30, dt=8, d=20):
+    """Số nhánh đai móc trên 1 cạnh (xem crosstie_index)."""
+    return len(crosstie_index(n_side, side_len, cover, dt, d))
 
 
 def check_column(col, sec, layout, conc, steel, steel_w, cover=30, psi=0.7, quick=None):
@@ -153,7 +158,7 @@ def candidate_layouts(b, h, cover=30, min_clear=50, max_spacing=400):
                 sb, sh = (b - 2 * c) / (nb - 1), (h - 2 * c) / (nh - 1)
                 if min(sb, sh) - d < min_clear or max(sb, sh) > max_spacing:
                     continue
-                if abs(nb - nh) > 2 and b == h:            # tiết diện vuông -> bố trí gần đối xứng
+                if b == h and nb != nh:                    # tiết diện vuông -> bố trí đối xứng 2 phương
                     continue
                 n = 2 * nb + 2 * (nh - 2)
                 As = n * bar_area(d)
@@ -208,3 +213,68 @@ def design_column(col, sec, conc, steel, steel_w, cover=30, psi=0.7):
         else:
             lo = mid + 1
     return {"layout": best[0], **best[1]}
+
+
+def _valid(b, h, d, nb, nh, cover=30, min_clear=50, max_spacing=400):
+    c = cover + 8 + d / 2
+    sb, sh = (b - 2 * c) / (nb - 1), (h - 2 * c) / (nh - 1)
+    return min(sb, sh) - d >= min_clear and max(sb, sh) <= max_spacing
+
+
+def _try(col, sec, layout, conc, steel, steel_w, cover, psi):
+    """Kiểm tra 1 bố trí; nếu chỉ thiếu khả năng chịu cắt thì giảm bước đai."""
+    r = check_column(col, sec, layout, conc, steel, steel_w, cover, psi)
+    if not r["ok"] and r["util_NM"] <= 1:
+        for s_new in [x for x in (250, 200, 150, 100, 75, 50) if x < layout["tie"]["s_mid"]]:
+            t2 = dict(layout["tie"], s_end=s_new, s_mid=s_new, s_lap=min(layout["tie"]["s_lap"], s_new))
+            r2 = check_column(col, sec, dict(layout, tie=t2), conc, steel, steel_w, cover, psi)
+            if r2["ok"]:
+                return dict(layout, tie=t2), r2
+    return layout, r
+
+
+def unify_stack(results, project, concrete_of, steel, steel_w, cover=30, psi=0.7):
+    """Đồng bộ bố trí thép theo trục cột: các tầng liền nhau cùng tiết diện dùng CHUNG số thanh mỗi cạnh
+    (nb x nh) để thép tầng trên thẳng hàng với thép tầng dưới khi nối chồng; mỗi tầng chỉ đổi đường kính.
+    Bố trí chung = bố trí của tầng cần nhiều thép nhất; mỗi tầng chọn đường kính nhỏ nhất vẫn đạt.
+    Trả về số tầng-cột đã đổi."""
+    order = {s["name"]: i for i, s in enumerate(project.get("stories", []))}
+    cols = {c["id"]: c for c in project["columns"]}
+    groups = {}
+    for i, r in enumerate(results):
+        groups.setdefault(r["label"], []).append(i)
+    changed = 0
+    for label, idx in groups.items():
+        idx.sort(key=lambda i: order.get(results[i]["story"], 0))
+        runs, cur = [], [idx[0]]                                  # các đoạn tầng liền nhau cùng tiết diện
+        for i in idx[1:]:
+            if results[i]["section"] == results[cur[-1]]["section"]:
+                cur.append(i)
+            else:
+                runs.append(cur)
+                cur = [i]
+        runs.append(cur)
+        for run in runs:
+            if len(run) < 2:
+                continue
+            ref = max(run, key=lambda i: results[i]["As"])
+            nb, nh = results[ref]["layout"]["nb"], results[ref]["layout"]["nh"]
+            for i in run:
+                r = results[i]
+                if (r["layout"]["nb"], r["layout"]["nh"]) == (nb, nh):
+                    continue
+                col = cols[r["id"]]
+                sec = project["frame_sections"][r["section"]]
+                b, h = sec["b"], sec["h"]
+                conc = concrete_of(sec["material"])
+                for d in COL_DIAMS:
+                    if not _valid(b, h, d, nb, nh, cover):
+                        continue
+                    lay = {"d": d, "nb": nb, "nh": nh, "tie": tie_for(d, b, h, nb, nh, conc, steel, steel_w, cover)}
+                    lay, chk = _try(col, sec, lay, conc, steel, steel_w, cover, psi)
+                    if chk["ok"]:
+                        results[i] = {k: r[k] for k in ("id", "label", "story", "section", "L")}
+                        results[i].update(layout=lay, **chk)
+                        changed += 1
+                        break
+    return changed

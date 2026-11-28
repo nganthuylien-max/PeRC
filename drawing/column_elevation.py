@@ -18,7 +18,7 @@ Quy tắc cấu tạo dùng ở đây (đều là hằng số, sửa được):
 import math
 
 from core.column_section import bar_positions
-from .model import Drawing
+from .model import story_vn, Drawing
 
 COVER = 30
 LAP = 40            # nối chồng 40d
@@ -164,7 +164,6 @@ def column_elevation(project, cols_res, label, scale=50, sec_scale=20, story_fro
         draw_node(D, z1, b, b_up, hb, t, side)
         if base:                                                                 # mặt móng
             D.line(xl, z0, xr, z0)
-            D.text(xr, z0 - 1.5 * S, "MẶT MÓNG / ĐÀI", 2.2, "TEXT", "right", "top")
 
         # ---- nút dưới khi vẽ riêng tầng này: đoạn cột + dầm tầng dưới, thép tầng dưới đi lên nối chồng
         if i == 0 and gi > 0:
@@ -192,8 +191,7 @@ def column_elevation(project, cols_res, label, scale=50, sec_scale=20, story_fro
                 D.line(-bl / 2 + c0, y, bl / 2 - c0, y, "THEP_DAI")
                 y += lo["res"]["layout"]["tie"]["s_end"]
             n_lo = lo["res"].get("n_bars", 0)
-            D.text(-bl / 2 - 2 * S, z0 - hbl / 2, f"{lo['res']['story']}: {n_lo}Ø{dl}", 2.2, "THEP", "right", "middle")
-            D.text(xl, z0 + 0.8 * S, f"{lo['res']['story']}  +{z0 / 1000:.3f}", 2.2, "TEXT", "left", "bottom")
+            D.text(-bl / 2 - 2 * S, z0 - hbl / 2, f"{story_vn(lo['res']['story'])}: {n_lo}Ø{dl}", 2.2, "THEP", "right", "middle")
             D.dim((xl, z0), (xl, z0 + jb["lap"]), (xl - 16 * S, z0), vertical=True)
             D.text(xl - 22 * S, z0 + jb["lap"] / 2, f"Nối chồng {jb['lap']}" +
                    (f", bẻ xiên 1:6 ({jb['shift']:.0f})" if jb["crank"] else f", thép chờ neo {jb['dowel']}"),
@@ -236,10 +234,10 @@ def column_elevation(project, cols_res, label, scale=50, sec_scale=20, story_fro
         lo_zone = max(l_end, lap_len)
         if tie["s_end"] < tie["s_mid"]:                   # thiết kế cũ / kháng chấn: đai dày 2 đầu cột
             zones = [(z0 + 50, z0 + lo_zone, s_lap if jb else tie["s_end"]),
-                     (z0 + lo_zone, z1 - hb - l_end, tie["s_mid"]), (z1 - hb - l_end, z1 - 50, tie["s_end"])]
+                     (z0 + lo_zone, z1 - hb - l_end, tie["s_mid"]), (z1 - hb - l_end, z1 - (hb if top else 50), tie["s_end"])]
         else:                                              # TCVN 5574: đai đều, dày hơn trong vùng nối (10.3.6.2)
             zones = ([(z0 + 50, z0 + lap_len, s_lap)] if jb and s_lap < tie["s_mid"] else []) + \
-                    [(z0 + (lap_len if jb and s_lap < tie["s_mid"] else 50), z1 - 50, tie["s_mid"])]
+                    [(z0 + (lap_len if jb and s_lap < tie["s_mid"] else 50), z1 - (hb if top else 50), tie["s_mid"])]
         c = COVER + dt / 2
         for y0, y1, sp in zones:
             if y1 <= y0:
@@ -259,10 +257,13 @@ def column_elevation(project, cols_res, label, scale=50, sec_scale=20, story_fro
         # kích thước vùng đai (bên trái)
         marks_y = sorted({round(v) for v in [z0, z1 - hb, z1] + [zz[1] for zz in zones[:-1]]})
         D.dim_chain_v(marks_y, xl, xl - 8 * S)
-        for k, (y0, y1, sp) in enumerate(zones):          # chữ ghi đai lệch khỏi vị trí vạch mặt cắt
+        cuts = [z0 + (jb["lap"] / 2 if jb else min(l_end, 0.3 * Hc) / 2), z0 + 0.5 * Hc,
+                z1 - hb - min(l_end, 0.3 * Hc) / 2, z0 + 0.6 * Hc]          # vị trí các vạch mặt cắt
+        for k, (y0, y1, sp) in enumerate(zones):          # chữ ghi đai đặt tránh xa vạch mặt cắt
             if y1 - y0 > 6 * S:
-                f = 0.75 if (k == 0 and len(zones) > 1) else (0.15 if k == 2 else 0.3)
-                D.text(-b / 2 - 2 * S, y0 + f * (y1 - y0), f"Ø{dt}a{sp}", 2.2, "THEP_DAI", "right", "middle")
+                ys = [y0 + f * (y1 - y0) for f in (0.3, 0.7, 0.2, 0.8, 0.4, 0.6, 0.5)]
+                y = max(ys, key=lambda v: min(abs(v - c) for c in cuts))
+                D.text(-b / 2 - 2 * S, y, f"Ø{dt}a{sp}", 2.2, "THEP_DAI", "right", "middle")
 
         # ---- ghi chú thép (bên phải) + ký hiệu mặt cắt
         n_bars = r["n_bars"] if "n_bars" in r else 2 * (lay["nb"] + lay["nh"]) - 4
@@ -274,11 +275,9 @@ def column_elevation(project, cols_res, label, scale=50, sec_scale=20, story_fro
         if len(segs) == 1:                                 # 1 tầng: 3 mặt cắt chân – giữa – đầu cột
             y_cuts = {1: z0 + (jb["lap"] / 2 if jb else min(l_end, 0.3 * Hc) / 2),
                       2: z0 + 0.5 * Hc, 3: z1 - hb - min(l_end, 0.3 * Hc) / 2}
-            for no, y in y_cuts.items():
-                for sg in (-1, 1):
-                    D.line(sg * (b / 2 + 2 * S), y, sg * (b / 2 + 7 * S), y, "TITLE")
-                D.text(-b / 2 - 8 * S, y, str(no), 3.0, "TITLE", "right", "middle")
-                D.text(b / 2 + 8 * S, y, str(no), 3.0, "TITLE", "left", "middle")
+            for no, y in y_cuts.items():                       # vạch đậm 2 bên cột + số mặt cắt
+                D.cut_mark(-b / 2 - 4.5 * S, y, no, vertical=False, text_side=-1)
+                D.cut_mark(b / 2 + 4.5 * S, y, no, vertical=False, text_side=1)
             s["y_cuts"] = y_cuts
         elif s is mine[len(mine) // 2]:
             no = gid[r["id"]]                              # vạch mặt cắt ở tầng giữa của nhóm
@@ -288,16 +287,18 @@ def column_elevation(project, cols_res, label, scale=50, sec_scale=20, story_fro
             D.text(-b / 2 - 8 * S, y, f"{no}", 3.0, "TITLE", "right", "middle")
             D.text(b / 2 + 8 * S, y, f"{no}", 3.0, "TITLE", "left", "middle")
 
-        # ---- cao độ sàn (bên phải ngoài cùng)
-        D.line(xr, z1, xr + 10 * S, z1, "TEXT")
-        D.text(xr + 1 * S, z1 + 0.8 * S, f"{r['story']}  +{z1 / 1000:.3f}", 2.2, "TEXT", "left", "bottom")
+        # ---- cao độ sàn (bên phải ngoài cùng): ký hiệu cao độ, không ghi tên tầng ETABS
+        D.level(xr + 2 * S, z1, z1 / 1000, story_vn(r["story"]))
+        if i == 0:                                         # mặt sàn dưới của đoạn cột
+            lab = story_vn(full[gi - 1]["res"]["story"]) if gi > 0 else "Mặt móng"
+            D.level(xr + 2 * S, z0, z0 / 1000, lab)
 
         # ---- nút: ghi chiều dài nối, cách xử lý thép
         if jt:
             note = (f"Nối chồng {jt['lap']}" + (f", bẻ xiên 1:6 ({jt['shift']:.0f})" if jt["crank"] else
                                                  f", thép chờ neo {jt['dowel']}"))
             if i == len(segs) - 1:                         # đoạn nối nằm ở tầng trên -> chỉ ghi chú
-                D.text(xl - 4 * S, z1 + TOP_STUB / 2, note + f" (xem bản vẽ {full[gi + 1]['res']['story']})",
+                D.text(xl - 4 * S, z1 + TOP_STUB / 2, note + f" (xem bản vẽ {story_vn(full[gi + 1]['res']['story']).lower()})",
                        2.2, "THEP", "right", "middle")
             else:
                 D.text(xl - 22 * S, z1 + jt["lap"] / 2, note, 2.2, "THEP", "right", "middle")
@@ -321,20 +322,27 @@ def column_elevation(project, cols_res, label, scale=50, sec_scale=20, story_fro
             D.line(-bu / 2 + cu, y, bu / 2 - cu, y, "THEP_DAI")
             y += up["res"]["layout"]["tie"]["s_end"]
         nu = up["res"].get("n_bars", 0)
-        D.text(bu / 2 + 2 * S, zt + TOP_STUB / 2, f"{up['res']['story']}: {nu}Ø{du}", 2.2, "THEP", "left", "middle")
+        D.text(bu / 2 + 2 * S, zt + TOP_STUB / 2, f"{story_vn(up['res']['story'])}: {nu}Ø{du}", 2.2, "THEP", "left", "middle")
 
     # nét cắt khi chỉ vẽ một khoảng tầng
     if i0 > 0:
         D.text(0, segs[0]["z0"] - full[i0 - 1]["hb"] - LOW_STUB - 4 * S,
-               f"(tiếp xuống {full[i0 - 1]['res']['story']})", 2.2, "TEXT", "center", "top")
+               f"(tiếp xuống {story_vn(full[i0 - 1]['res']['story']).lower()})", 2.2, "TEXT", "center", "top")
     if i1 < len(full) - 1:
-        D.text(0, segs[-1]["z1"] + TOP_STUB + 4 * S, f"(tiếp lên {full[i1 + 1]['res']['story']})",
+        D.text(0, segs[-1]["z1"] + TOP_STUB + 4 * S, f"(tiếp lên {story_vn(full[i1 + 1]['res']['story']).lower()})",
                2.2, "TEXT", "center", "bottom")
     # cao độ các sàn
     D.dim_chain_v([s["z0"] for s in segs] + [segs[-1]["z1"]], xr, xr + 60 * S)
 
     x0, y0, x1, y1 = D.bbox()
-    rng = segs[0]["res"]["story"] if len(segs) == 1 else f"{segs[0]['res']['story']} – {segs[-1]['res']['story']}"
+    rng = story_vn(segs[0]["res"]["story"]) if len(segs) == 1 else \
+        f"{story_vn(segs[0]['res']['story'])} – {story_vn(segs[-1]['res']['story'])}"
+    rng = rng.upper()
+    from core.grids import Grids
+    col0 = next((c for c in project["columns"] if c["id"] == segs[0]["res"]["id"]), None)
+    ax = Grids(project).column(col0) if col0 else None
+    if ax:
+        rng = f"TRỤC {ax} – " + rng
     sub = f"TL 1:{S}"
     if len(segs) == 1:
         r0 = segs[0]["res"]
@@ -369,7 +377,7 @@ def column_elevation(project, cols_res, label, scale=50, sec_scale=20, story_fro
             sheets.append(joint_section(full[gi - 1], full[gi], j, sec_scale))
     if len(segs) == 1:                                 # bố cục giống bản vẽ dầm: hàng mặt cắt ngang + ghi chú bên dưới
         from .sections import legend
-        sec_scale_row = 20
+        sec_scale_row = sec_scale
         k = S / sec_scale_row
         sheets = story_sections(full, JF, i0, sec_scale_row)[::-1]          # 1-1, 2-2, 3-3 từ trái sang phải
         x_cur = x0
@@ -383,18 +391,26 @@ def column_elevation(project, cols_res, label, scale=50, sec_scale=20, story_fro
         r0 = segs[0]["res"]
         L0 = r0["layout"]
         marks = [{"mark": 1, "n": r0.get("n_bars", 0), "d": L0["d"], "kind": "bar",
-                  "desc": f"Thép dọc chịu lực {r0['story']}"}]
-        if i0 > 0:                                     # số hiệu: 1 thép tầng này, 2 thép tầng dưới nối, 3 cốt đai
-            lo = full[i0 - 1]["res"]
-            marks.append({"mark": 2, "n": lo.get("n_bars", 0), "d": lo["layout"]["d"], "kind": "bar",
-                          "desc": f"Thép dọc {lo['story']} nối chồng lên (chấm rỗng ở mặt cắt 1-1)"})
-        tie = L0["tie"]
-        marks.append({"mark": 3, "n": 1, "d": tie["d"], "kind": "stir",
+                  "desc": f"Thép dọc chịu lực {story_vn(r0['story']).lower()}"}]
+        tie = L0["tie"]                                # số hiệu: 1 thép dọc tầng này, 2 cốt đai
+        marks.append({"mark": 2, "n": 1, "d": tie["d"], "kind": "stir",
                       "desc": (f"Cốt đai a{tie['s_mid']}" + (f", vùng nối chồng a{min(tie.get('s_lap', tie['s_end']), tie['s_end'])}"
                                if i0 > 0 and tie.get('s_lap', tie['s_end']) < tie['s_mid'] else "")
                                + (f", đầu cột a{tie['s_end']}" if tie['s_end'] < tie['s_mid'] else "")
                                + " – TCVN 5574:2018 10.3.4, 10.3.6.2")})
+        # bảng thống kê thép + ghi chú chung (như bản vẽ mẫu), cùng số liệu với bóc khối lượng
+        from quantity.takeoff import column_items
+        from .schedule import steel_table, notes, general_notes
+        items = column_items(r0, segs[0]["sec"], i0 == 0, COVER, i0 == len(full) - 1)
+        for it in items:
+            if it["kind"] == "cross":
+                marks.append({"mark": it["mark"], "n": 1, "d": tie["d"], "kind": "stir",
+                              "desc": f"Đai móc giữ thanh giữa cạnh {it['face']} (dài {it['shape'][2]:.0f} + 2 móc) – TCVN 5574:2018 10.3.4.5"})
         legend(D, x0, y_top - row_h - 10 * S, marks)
+        legend_bottom = y_top - row_h - 10 * S - (8 + 6.5 * len(marks)) * S
+        bx0, by0, bx1, by1 = D.bbox()
+        steel_table(D, bx1 + 15 * S, y1, items, f"BẢNG THỐNG KÊ CỐT THÉP CỘT {label} – {story_vn(r0['story']).upper()}")
+        notes(D, x0, legend_bottom - 8 * S, general_notes(segs[0]["sec"]["material"]))
         return D
     col_w = 0.0
     for sh in sheets:
@@ -409,31 +425,20 @@ def column_elevation(project, cols_res, label, scale=50, sec_scale=20, story_fro
 
 
 def joint_section(lo, up, j, scale, title=None, tie_txt=None):
-    """Mặt cắt qua vùng nối ngay trên sàn: tiết diện tầng trên, thép tầng trên (đặc) + thép tầng dưới đang nối (rỗng)."""
-    from .sections import column_section_simple
+    """Mặt cắt chân cột (vùng nối chồng): chỉ thể hiện tiết diện và thép của CHÍNH cột tầng này
+    (thép tầng dưới đã thể hiện ở mặt cắt dọc), đai ghi theo bước trong vùng nối."""
+    from .sections import column_section_simple, section_title
     S = scale
     b, h = up["sec"]["b"], up["sec"]["h"]
-    Lu, Ll = up["res"]["layout"], lo["res"]["layout"]
+    Lu = up["res"]["layout"]
     bu = bar_positions(b, h, COVER, Lu["tie"]["d"], Lu["d"], Lu["nb"], Lu["nh"])
-    s = (Ll["d"] + Lu["d"]) / 2
-    bl = bar_positions(b, h, COVER, Lu["tie"]["d"], Ll["d"], Ll["nb"], Ll["nh"])
-    hollow = []
-    for t in bl:                                       # thép dưới nằm phía trong, cạnh thép trên
-        z = t["z"] - math.copysign(s, t["z"]) if abs(t["z"]) > b / 2 - 80 else t["z"]
-        y = t["y"] - math.copysign(s, t["y"]) if abs(t["y"]) > h / 2 - 80 else t["y"]
-        hollow.append((z, y))
-    tags = [(f"{len(bu)}Ø{Lu['d']}", 1, "bars"),
-            (f"{len(bl)}Ø{Ll['d']} ({lo['res']['story']}, nối)", 2, "hollow")]
+    tags = [(f"{len(bu)}Ø{Lu['d']}", 1, "bars")]
     if tie_txt:
-        tags.append((tie_txt.replace("Đai ", ""), 3, "tie"))
-    D = column_section_simple(b, h, COVER, Lu["tie"]["d"], bu, Lu["d"], tags, scale, hollow, Ll["d"],
-                              outer=(lo["sec"]["b"], lo["sec"]["h"]) if j["e"] > 0 else None)
-    x0, y0, x1, y1 = D.bbox()
-    D.text(0, y0 - 2 * S, (f"Nét mảnh: mép cột {lo['res']['section']} tầng dưới – " if j["e"] > 0 else "")
-           + "chấm rỗng: thép tầng dưới nối chồng", 2.0, "TEXT", "center", "top")
+        tags.append((tie_txt.replace("Đai ", ""), 2, "tie"))
+    D = column_section_simple(b, h, COVER, Lu["tie"]["d"], bu, Lu["d"], tags, scale)
     if title:
-        D.text(0, y0 - 7 * S, title, 3.5, "TITLE", "center", "top")
-        D.text(0, y0 - 12 * S, f"TỈ LỆ 1/{S:.0f}", 3.0, "TITLE", "center", "top")
+        x0, y0, x1, y1 = D.bbox()
+        section_title(D, 0, y0 - 3 * S, 1, scale)
     return D
 
 
@@ -463,7 +468,7 @@ def story_sections(full, JF, gi, scale):
     return out
 
 
-def column_story_sheets(project, cols_res, label, story_from=None, story_to=None, per_row=3, scale=25):
+def column_story_sheets(project, cols_res, label, story_from=None, story_to=None, per_row=3, scale=25, sec_scale=20):
     """Mỗi tầng 1 bản vẽ (mặt cắt dọc đoạn cột tầng đó + mặt cắt ngang + vùng nối), xếp lưới từ tầng trên xuống."""
     from .sections import combine
     full = column_stack(project, cols_res, label)
@@ -476,7 +481,7 @@ def column_story_sheets(project, cols_res, label, story_from=None, story_to=None
     i0 = names.index(story_from) if story_from in names else 0
     i1 = names.index(story_to) if story_to in names else len(full) - 1
     i0, i1 = min(i0, i1), max(i0, i1)
-    sheets = [column_elevation(project, cols_res, label, scale, story_from=n, story_to=n)
+    sheets = [column_elevation(project, cols_res, label, scale, sec_scale, story_from=n, story_to=n)
               for n in reversed(names[i0:i1 + 1])]
     return combine(sheets, scale, per_row=per_row)
 

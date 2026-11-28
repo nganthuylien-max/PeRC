@@ -4,7 +4,7 @@ from .materials import bar_area
 
 DIAMS = [14, 16, 18, 20, 22, 25, 28]
 ZONES = ("L", "M", "R")
-CONT_RATIO = {"top": 0.25, "bot": 0.33}   # thép suốt tối thiểu / As lớn nhất của thớ
+CONT_RATIO = {"top": 0.25, "bot": 0.5}    # thép suốt tối thiểu / As lớn nhất của thớ (thớ dưới: >= 50% thép nhịp vào gối, TCVN 5574:2018 10.3.3.5)
 
 
 def layer_capacity(b, cover, ds, d, face):
@@ -12,6 +12,18 @@ def layer_capacity(b, cover, ds, d, face):
     clear = max(d, 25 if face == "bot" else 30)
     avail = b - 2 * (cover + ds)
     return max(2, int((avail + clear) // (d + clear)))
+
+
+def second_layer_x(xs, n2, b):
+    """Vị trí thanh lớp 2: đối xứng qua trục dầm, thẳng hàng với thanh lớp 1 (để đổ bê tông lọt),
+    xếp từng cặp từ 2 góc vào trong; lẻ 1 thanh thì đặt giữa."""
+    out, i, j = [], 0, len(xs) - 1
+    while len(out) + 2 <= n2 and i < j:
+        out += [xs[i], xs[j]]
+        i, j = i + 1, j - 1
+    if len(out) < n2:
+        out.append(b / 2)
+    return sorted(out)
 
 
 def place_face(b, cover, ds, cont, add, face):
@@ -36,9 +48,8 @@ def place_face(b, cover, ds, cont, add, face):
                      "group": "cont" if i in cont_idx else "add", "layer": 1})
     if n2 > 0:
         y2 = cover + ds + dmax + max(25, dmax) + d_a / 2
-        idx2 = sorted({round(i * (n1 - 1) / max(n2 - 1, 1)) for i in range(n2)})
-        for i in idx2[:n2]:
-            bars.append({"x": xs[i], "y": y2, "d": d_a, "group": "add", "layer": 2})
+        for x in second_layer_x(xs, n2, b):
+            bars.append({"x": x, "y": y2, "d": d_a, "group": "add", "layer": 2})
 
     As = sum(bar_area(t["d"]) for t in bars)
     a = sum(bar_area(t["d"]) * t["y"] for t in bars) / As        # trọng tâm thép

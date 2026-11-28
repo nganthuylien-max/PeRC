@@ -19,6 +19,8 @@ try:
     frame_secs = reader.read_frame_sections(model)
     area_secs = reader.read_area_sections(model)
     points = reader.read_points(model)
+    grids = reader.read_grids(model)
+    print(f"  {len(grids)} đường trục")
 
     print("Đọc dầm, cột, sàn, vách...")
     beams, columns = reader.read_frames(model, frame_secs, points)
@@ -39,14 +41,22 @@ try:
     if not combos:
         raise SystemExit("Không có tổ hợp nào được chọn – vào bước 1 trong app để chọn tổ hợp.")
     print(f"Đọc nội lực {len(combos)} tổ hợp...")
-    reader.read_beam_forces(model, beams, combos)
+    # nửa bề rộng gối (cột / vách / dầm chính) ở 2 đầu mỗi dầm -> thiết kế theo nội lực tại mép gối
+    from core.beam_detailing import find_supports
+    sup = find_supports({"frame_sections": frame_secs, "area_sections": area_secs,
+                         "columns": columns, "walls": walls, "beams": beams})
+    faces = {}
+    for b in beams:
+        (wL, kL, *_), (wR, kR, *_) = sup[b["id"]]
+        faces[b["id"]] = (wL / 2 if kL != "dầm" else 0.0, wR / 2 if kR != "dầm" else 0.0)   # gối dầm: giữ tim
+    reader.read_beam_forces(model, beams, combos, faces)
     reader.read_column_forces(model, columns, combos)
 
     file_name = model.GetModelFilename(True).replace(".$et", ".EDB")
 finally:
     model.SetPresentUnits(old_units)          # trả lại đơn vị cũ cho người dùng
 
-project = {"model_file": file_name, "units": "kN, kN.m, mm", "combos": combos,
+project = {"model_file": file_name, "units": "kN, kN.m, mm", "combos": combos, "grids": grids,
            "stories": stories, "materials": materials,
            "frame_sections": frame_secs, "area_sections": area_secs,
            "beams": beams, "columns": columns, "slabs": slabs, "walls": walls}

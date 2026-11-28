@@ -17,6 +17,13 @@ LAYERS = {
 BULGE_90 = math.tan(math.pi / 8)        # bulge của cung 90 độ
 
 
+def story_vn(name):
+    """'Story12' -> 'Tầng 12' (tên tầng tiếng Việt trên bản vẽ); tên khác giữ nguyên."""
+    import re
+    m = re.fullmatch(r"\s*story\s*(\d+)\s*", str(name), re.I)
+    return f"Tầng {m.group(1)}" if m else str(name)
+
+
 class Drawing:
     def __init__(self, scale=10.0):
         self.S = scale
@@ -87,22 +94,66 @@ class Drawing:
             self.circle(tx - tr * math.cos(ang), ty - tr * math.sin(ang), 0.45 * S, "TAG", True)
 
     def tag2(self, x, y, label, mark, targets, side="right"):
-        """Ghi chú thép kiểu bản vẽ thi công: chữ nằm trên gạch ngang, số hiệu khoanh tròn ở cuối gạch,
-        đường dẫn từ đầu gạch tới từng thanh. (x, y) = đầu gạch phía thanh thép; side = phía đặt chữ."""
+        """Ghi chú thép kiểu bản vẽ thi công: chữ nằm trên gạch ngang, số hiệu khoanh tròn ở cuối gạch.
+        Đường dẫn GẤP KHÚC VUÔNG GÓC: từ thanh thép đi thẳng đứng tới cao độ gạch ngang rồi đi ngang tới gạch.
+        (x, y) = đầu gạch phía thanh thép; side = phía đặt chữ."""
         S = self.S
-        w = len(label) * 2.2 * S * 0.62 + 2 * S
-        r = 1.6 * S
+        w = len(label) * 2.5 * S * 0.82 + 3 * S       # đủ chỗ cho chữ (font Arial) trước vòng tròn
+        r = 2.4 * S
         sg = 1 if side == "right" else -1
         x_end = x + sg * w
         self.line(x, y, x_end, y, "TAG")
-        self.text((x + x_end) / 2, y + 0.6 * S, label, 2.2, "TAG", "center", "bottom")
+        self.text(x + sg * 1.0 * S, y + 0.6 * S, label, 2.5, "TAG", "left" if sg > 0 else "right", "bottom")
         if mark is not None:
             cx = x_end + sg * r
             self.circle(cx, y, r, "TAG")
-            self.text(cx, y, str(mark), 1.8, "TAG", "center", "middle")
+            self.text(cx, y, str(mark), 2.5, "TAG", "center", "middle")
         for tx, ty, tr in targets:
-            self.line(x, y, tx, ty, "TAG")
-            self.circle(tx, ty, 0.4 * S, "TAG", True)
+            if (tx - x) * sg <= 1e-6:                       # thanh nằm phía trước gạch: đứng rồi ngang
+                if abs(ty - y) > 1e-6:
+                    self.line(tx, ty, tx, y, "TAG")
+                if abs(tx - x) > 1e-6:
+                    self.line(tx, y, x, y, "TAG")
+            else:
+                self.line(x, y, tx, ty, "TAG")
+
+    def level(self, x, y, z_m, label=None, side=1, length=18):
+        """Ký hiệu cao độ kiểu bản vẽ thi công: tam giác chỉ xuống mặt cao độ, gạch ngang,
+        tên tầng phía trên gạch, cao độ (m) phía dưới gạch. (x, y) = điểm trên mặt cao độ."""
+        S = self.S
+        x2 = x + side * length * S
+        tx = x + side * 3.0 * S
+        self.pline([(tx, y), (tx - 1.4 * S, y + 2.4 * S), (tx + 1.4 * S, y + 2.4 * S)], True, "TEXT")
+        self.line(x, y, x2, y, "TEXT")
+        ha = "left" if side > 0 else "right"
+        xt = x + side * 5.5 * S
+        if label:
+            self.text(xt, y + 0.6 * S, label, 2.5, "TEXT", ha, "bottom")
+        self.text(xt, y - 0.6 * S, f"{z_m:+.3f}" if z_m else "±0.000", 2.5, "TEXT", ha, "top")
+
+    def bubble_axis(self, x, y, name):
+        """Bong bóng tên trục ở đầu đường trục (đường tròn đường kính 8 mm giấy)."""
+        r = 4.0 * self.S
+        self.circle(x, y - r, r, "TEXT")
+        self.text(x, y - r, str(name), 3.5, "TEXT", "center", "middle")
+
+    def cut_mark(self, x, y, no, vertical=True, text_side=1):
+        """Ký hiệu vị trí mặt cắt kiểu bản vẽ thi công: vạch đậm ngắn + số mặt cắt.
+        vertical=True: vạch đứng (cắt dầm); False: vạch ngang (cắt cột). (x, y) = tâm vạch."""
+        S = self.S
+        L, w = 4.0 * S, 0.9 * S
+        n = 5
+        for i in range(n):                                    # tô đậm bằng các nét sát nhau
+            o = -w / 2 + i * w / (n - 1)
+            if vertical:
+                self.line(x + o, y - L / 2, x + o, y + L / 2, "TITLE")
+            else:
+                self.line(x - L / 2, y + o, x + L / 2, y + o, "TITLE")
+        if vertical:
+            self.text(x + text_side * 1.5 * S, y + L / 2, str(no), 3.0, "TITLE", "left" if text_side > 0 else "right", "top")
+        else:
+            self.text(x + text_side * (L / 2 + 1.0 * S), y, str(no), 3.0, "TITLE",
+                      "left" if text_side > 0 else "right", "middle")
 
     def title(self, x, y, txt, sub=None):
         S = self.S

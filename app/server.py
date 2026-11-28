@@ -49,7 +49,8 @@ NEEDS = {"beams": ["project"], "columns": ["project"], "drawings": ["project", "
 
 def pdir():
     """Thư mục của dự án đang mở – mọi kết quả đọc/ghi ở đây."""
-    return P.folder(P.active())
+    a = P.active()
+    return P.folder(a) if a else os.path.join(P.home(), "__chua_co_du_an__")   # chưa có dự án -> thư mục rỗng ảo
 
 
 def path(key):
@@ -80,6 +81,18 @@ def file_info(key):
     return time.strftime("%d/%m %H:%M", time.localtime(os.path.getmtime(p)))
 
 
+def _write_meta(folder, **changes):
+    """Ghi meta.json theo đường dẫn thư mục (không phụ thuộc tài khoản đang đăng nhập)."""
+    f = os.path.join(folder, "meta.json")
+    try:
+        meta = json.load(open(f, encoding="utf-8")) if os.path.exists(f) else {}
+        meta.update(changes)
+        meta["updated"] = time.strftime("%Y-%m-%d %H:%M")
+        json.dump(meta, open(f, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    except Exception:
+        pass
+
+
 # ------------------------------------------------------------------ chạy tác vụ dài trong tiến trình con
 class Job:
     def __init__(self):
@@ -98,6 +111,7 @@ class Job:
                 return False
             script, _ = TASKS[task]
             self.project = P.active()
+            self.folder = P.folder(self.project)          # giữ đúng thư mục dù sau đó đổi tài khoản
             self.task, self.state, self.log = task, "running", []
             self.started, self.ended = time.time(), 0.0
             env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
@@ -106,7 +120,7 @@ class Job:
             else:
                 cmd = [sys.executable, "-u", os.path.join(ROOT, script), *args]
             self.proc = subprocess.Popen(
-                cmd, cwd=P.folder(self.project), env=env,
+                cmd, cwd=self.folder, env=env,
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace",
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         threading.Thread(target=self._pump, daemon=True).start()
@@ -120,12 +134,12 @@ class Job:
         code = self.proc.wait()
         if code == 0 and self.task == "etabs":            # ghi tên model ETABS vào thông tin dự án
             try:
-                pj = json.load(open(os.path.join(P.folder(self.project), "project.json"), encoding="utf-8"))
-                P.write_meta(self.project, model=pj.get("model_file", ""))
+                pj = json.load(open(os.path.join(self.folder, "project.json"), encoding="utf-8"))
+                _write_meta(self.folder, model=pj.get("model_file", ""))
             except Exception:
                 pass
         elif code == 0:
-            P.write_meta(self.project)                    # cập nhật thời gian sửa
+            _write_meta(self.folder)                      # cập nhật thời gian sửa
         self.state = "done" if code == 0 else "error"
         self.ended = time.time()
 
@@ -143,6 +157,21 @@ JOB = Job()
 @app.get("/")
 def index():
     return send_from_directory(app.static_folder, "index.html")
+
+
+# ------------------------------------------------------------------ tài khoản -> kho dự án riêng
+@app.before_request
+def _per_user():
+    """Mỗi yêu cầu: chọn kho dự án theo email đang đăng nhập. Chưa đăng nhập thì chỉ cho gọi /api/auth."""
+    st = SESSION.status if (SESSION.status and SESSION.status.get("ok")) else None
+    P.set_user(st.get("email") if st else "")
+    if not request.path.startswith("/api/") or request.path.startswith(("/api/auth/", "/api/job")):
+        return None
+    if SESSION.public()["configured"] and not st:
+        return jsonify({"ok": False, "error": "Chưa đăng nhập."}), 401
+    if request.path.startswith("/api/admin/") and not (st and st.get("is_admin")):
+        return jsonify({"ok": False, "error": "Chỉ quản trị viên."}), 403
+    return None
 
 
 # ------------------------------------------------------------------ trạng thái chung
@@ -253,9 +282,40 @@ def beam_svg(bid):
     r = next((x for x in load("beams") or [] if x["id"] == bid), None)
     if not r or not r["layout"]:
         abort(404)
-    sec = load("project")["frame_sections"][r["section"]]
+    from quantity.takeoff import slab_thickness_by_story
+    p = load("project")
+    sec = p["frame_sections"][r["section"]]
     det = detail_beam(r, sec, supports()[r["id"]])
-    return Response(to_svg(beam_sheet(r, sec, 10, det=det)), mimetype="image/svg+xml")
+    t = slab_thickness_by_story(p).get(r["story"], 0)              # vẽ cánh sàn ở mặt cắt ngang
+    from core.grids import Grids, beam_context
+    axes, level = beam_context(p, Grids(p), r)                       # bong bóng trục + cao độ
+    es, sc = _scale(request.args.get("tl"), 25), _scale(request.args.get("tlmc"), 10)
+    return Response(to_svg(beam_sheet(r, sec, sc, det=det, slab_t=t, axes=axes, level=level, es=es)),
+                    mimetype="image/svg+xml")
+
+
+SCALES = (10, 15, 20, 25, 30, 40, 50, 75, 100)
+PAPERS = ("A3", "A2", "A1", "A0")
+
+
+def _scale(v, default):
+    """Tỉ lệ hợp lệ (1:v) từ tham số của giao diện, sai thì dùng mặc định."""
+    try:
+        v = int(v)
+    except (TypeError, ValueError):
+        return default
+    return v if v in SCALES else default
+
+
+def _draw_flags(body):
+    """Tuỳ chọn khổ giấy / tỉ lệ từ giao diện -> tham số dòng lệnh cho draw_sections.py."""
+    flags = []
+    if body.get("paper") in PAPERS:
+        flags.append(f"--kho={body['paper']}")
+    for k, d in (("tl", 25), ("tlmc", 10), ("tlc", 25), ("tlmcc", 20)):
+        if body.get(k):
+            flags.append(f"--{k}={_scale(body.get(k), d)}")
+    return flags
 
 
 @app.get("/api/svg/column/<cid>")
@@ -269,10 +329,27 @@ def column_svg(cid):
     return Response(to_svg(column_sheet(r, sec, 10)), mimetype="image/svg+xml")
 
 
+def _label_key(s):
+    import re
+    m = re.match(r"([A-Za-z]*)(\d+)", s)
+    return (m.group(1), int(m.group(2))) if m else (s, 0)
+
+
 @app.get("/api/column_labels")
 def column_labels():
-    labels = {r["label"] for r in load("columns") or []}
-    return jsonify(sorted(labels, key=lambda s: (len(s), s)))
+    """Tên các cột (?story=Story5: chỉ cột có ở tầng đó)."""
+    st = request.args.get("story")
+    labels = {r["label"] for r in load("columns") or [] if not st or r["story"] == st}
+    return jsonify(sorted(labels, key=_label_key))
+
+
+@app.get("/api/beam_list")
+def beam_list():
+    """Các dầm CÓ bản vẽ (xếp được thép) của 1 tầng: [{id, label, section, ok}]."""
+    st = request.args.get("story")
+    rs = [r for r in load("beams") or [] if r["story"] == st and r["layout"]]
+    return jsonify([{"id": r["id"], "label": r["label"], "section": r["section"], "ok": r["ok"]}
+                    for r in sorted(rs, key=lambda r: _label_key(r["label"]))])
 
 
 @app.get("/api/svg/column_elev/<label>")
@@ -282,7 +359,8 @@ def column_elev_svg(label):
     from drawing.export import to_svg
     st = request.args.get("story") or (column_stories(load("project"), load("columns") or [], label) or [None])[0]
     try:
-        D = column_story_sheets(load("project"), load("columns") or [], label, st, st)
+        D = column_story_sheets(load("project"), load("columns") or [], label, st, st,
+                                scale=_scale(request.args.get("tlc"), 25), sec_scale=_scale(request.args.get("tlmcc"), 20))
     except ValueError:
         abort(404)
     return Response(to_svg(D), mimetype="image/svg+xml")
@@ -333,18 +411,31 @@ def quantities():
 def run(task):
     if task not in TASKS:
         abort(404)
+    if not P.active():
+        return jsonify({"ok": False, "error": "Chưa có dự án. Vào mục Dự án, đặt tên rồi bấm Tạo dự án mới."})
     missing = [FILES[k] for k in NEEDS.get(task, []) if not os.path.exists(path(k))]
     if missing:
         return jsonify({"ok": False, "error": "Chưa có " + ", ".join(missing) + ". Làm bước trước đó trước."})
     args = []
     body = request.get_json(silent=True) or {}
-    if task == "drawings" and body.get("column"):        # mặt cắt dọc cột: 1 tầng hoặc mỗi tầng 1 file
+    if task == "drawings" and body.get("kind") == "beam":     # dầm: 1 dầm hoặc mọi dầm của 1 tầng
+        if not body.get("story"):
+            return jsonify({"ok": False, "error": "Chọn tầng của dầm."})
+        args = ["dam", body["story"]] + ([body["beam"]] if body.get("beam") else [])
+    elif task == "drawings" and body.get("kind") == "column":  # cột: 1 cột 1 tầng / 1 cột mọi tầng / mọi cột 1 tầng
+        col, st = body.get("column") or "", body.get("story") or ""
+        if not col and not st:
+            return jsonify({"ok": False, "error": "Chọn 1 tầng hoặc 1 cột."})
+        args = ["cot", col or "*"] + ([st] if st else [])
+    elif task == "drawings" and body.get("column"):        # (giao diện cũ) mặt cắt dọc cột
         args = ["cot", body["column"]] + ([body["story"]] if body.get("story") else [])
     elif task == "drawings":
         story = body.get("story")
         if not story:
             return jsonify({"ok": False, "error": "Chọn tầng cần xuất bản vẽ."})
         args = [story]
+    if task == "drawings":
+        args += _draw_flags(body)
     if JOB.state == "running":
         return jsonify({"ok": False, "error": "Đang chạy một tác vụ khác, đợi xong đã."})
     note = ""
@@ -435,6 +526,8 @@ def combos_get():
 @app.post("/api/combos")
 def combos_set():
     sel = (request.get_json(silent=True) or {}).get("selected", [])
+    if not P.active():
+        return jsonify({"ok": False, "error": "Chưa có dự án."})
     json.dump(sel, open(os.path.join(pdir(), "combos_selected.json"), "w", encoding="utf-8"),
               ensure_ascii=False, indent=1)
     return jsonify({"ok": True, "n": len(sel)})

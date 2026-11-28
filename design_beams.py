@@ -29,8 +29,7 @@ for bm in p["beams"]:
     except ValueError as e:
         # không xếp nổi thép trong 2 lớp -> vẫn ghi lại là KHÔNG ĐẠT, kèm gợi ý
         r = {"layout": None, "checks": None, "util": None, "ok": False,
-             "warnings": [f"{e}. Gợi ý: tăng tiết diện hoặc khai báo vùng cứng đầu dầm "
-                          "(mômen đang lấy tại tim gối)"]}
+             "warnings": [f"{e}. Gợi ý: tăng tiết diện dầm (b hoặc h)"]}
     results.append({**info, **r})
 
 with open("design_beams.json", "w", encoding="utf-8") as f:

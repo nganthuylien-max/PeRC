@@ -28,10 +28,10 @@ async function loadSummary() {
   for (const k of ["project", "beams", "columns", "quantities"]) $("#dot-" + k).classList.toggle("on", !!f[k]);
   const p = SUMMARY.project;
   $("#model-name").textContent = p ? p.model + " · đọc lúc " + f.project : "Chưa có dữ liệu ETABS";
-  $("#nav-project").textContent = SUMMARY.active;
+  $("#nav-project").textContent = SUMMARY.active || "Chưa có dự án";
   const stories = await api("/api/stories");
   $$(".story-select").forEach(sel => {
-    const keep = sel.value, all = sel.id !== "draw-story";
+    const keep = sel.value, all = sel.id !== "draw-story" && !sel.dataset.noall;
     sel.innerHTML = (all ? '<option value="">Tất cả tầng</option>' : "") +
       stories.map(s => `<option>${s}</option>`).join("");
     if (keep && stories.includes(keep)) sel.value = keep;
@@ -44,6 +44,11 @@ const stat = (v, label, cls = "") => `<div class="stat ${cls}"><b>${v}</b><span>
 async function loadProjects() {
   const r = await api("/api/projects");
   const pill = (ok, t) => `<span class="${ok ? "ok" : ""}">${ok ? "✓ " : ""}${t}</span>`;
+  if (!r.items.length) {
+    $("#project-list").innerHTML = `<div class="empty"><b>Chưa có dự án nào</b>
+      <span>Nhập tên dự án ở ô phía trên rồi bấm <b>Tạo dự án mới</b> để bắt đầu.</span></div>`;
+    return;
+  }
   $("#project-list").innerHTML = r.items.map(p => `<div class="proj ${p.name === r.active ? "on" : ""}" data-name="${esc(p.name)}">
     <h3><span class="nm">${esc(p.name)}</span>${p.name === r.active ? '<span class="badge">ĐANG MỞ</span>' : ""}</h3>
     <div class="meta">${p.model ? "Model: " + esc(p.model) + "<br>" : ""}Tạo: ${p.created || "–"} · Sửa: ${p.updated || "–"} · ${p.size_mb} MB</div>
@@ -215,12 +220,38 @@ $("#modal-close").onclick = () => $("#modal").classList.remove("on");
 $("#modal").onclick = e => { if (e.target.id === "modal") $("#modal").classList.remove("on"); };
 
 // ---------------------------------------------------------------- 4. Bản vẽ
+// tìm nhanh: ô tìm lọc danh sách trong ô chọn bên cạnh (giữ lựa chọn "Tất cả ...")
+function fillSelect(sel, items, allText, find) {
+  const q = (find || "").trim().toLowerCase(), keep = sel.value;
+  const list = items.filter(it => !q || it.text.toLowerCase().includes(q));
+  sel.innerHTML = (allText && !q ? `<option value="">${allText}</option>` : "") +
+    list.map(it => `<option value="${esc(it.value)}">${esc(it.text)}</option>`).join("");
+  if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+  return list.length;
+}
+let DB = [], DC = [];
+async function loadDrawBeams() {
+  const st = $("#db-story").value;
+  DB = st ? await api("/api/beam_list?story=" + encodeURIComponent(st)) : [];
+  filterDrawBeams();
+}
+function filterDrawBeams() {
+  const n = fillSelect($("#db-beam"), DB.map(b => ({value: b.label, text: `${b.label}  (${b.section}${b.ok ? "" : " – KHÔNG ĐẠT"})`})),
+                      "Tất cả dầm của tầng", $("#db-find").value);
+  if (!n && $("#db-find").value) $("#db-beam").innerHTML = '<option value="-">Không tìm thấy</option>';
+}
+async function loadDrawCols() {
+  const st = $("#dc-story").value;
+  DC = await api("/api/column_labels" + (st ? "?story=" + encodeURIComponent(st) : ""));
+  const n = fillSelect($("#dc-col"), DC.map(l => ({value: l, text: l})), st ? "Tất cả cột của tầng" : "", $("#dc-find").value);
+  if (!n && $("#dc-find").value) $("#dc-col").innerHTML = '<option value="-">Không tìm thấy</option>';
+}
 async function loadDrawings() {
-  const labels = await api("/api/column_labels");
-  const sel = $("#draw-col"), keep = sel.value;
-  sel.innerHTML = labels.map(l => `<option>${l}</option>`).join("");
-  if (keep && labels.includes(keep)) sel.value = keep;
-  await loadColStories();
+  const stories = await api("/api/stories");
+  const s = $("#dc-story"), keep = s.value;
+  s.innerHTML = '<option value="">Tất cả tầng</option>' + stories.map(x => `<option>${x}</option>`).join("");
+  s.value = keep && stories.includes(keep) ? keep : (stories[0] || "");
+  await Promise.all([loadDrawBeams(), loadDrawCols()]);
   const list = await api("/api/drawings");
   $("#draw-list").innerHTML = list.length ? list.map(d => `<div class="file"><b>${esc(d.name)}.dxf</b>
     <span class="muted grow">${d.time}</span>
@@ -228,21 +259,41 @@ async function loadDrawings() {
     : '<span class="muted">Chưa xuất bản vẽ nào.</span>';
   $("#dot-drawings").classList.toggle("on", list.length > 0);
 }
-$("#btn-draw").onclick = () => runTask("drawings", {story: $("#draw-story").value});
-async function loadColStories() {
-  const col = $("#draw-col").value; if (!col) return;
-  const st = await api("/api/column_stories/" + encodeURIComponent(col));
-  const s = $("#draw-col-story"), keep = s.value;
-  s.innerHTML = '<option value="">Tất cả tầng (mỗi tầng 1 file)</option>' + st.map(x => `<option>${x}</option>`).join("");
-  s.value = keep && st.includes(keep) ? keep : (st[st.length - 1] || "");
-}
-$("#draw-col").onchange = loadColStories;
-$("#btn-col-draw").onclick = () => runTask("drawings", {column: $("#draw-col").value, story: $("#draw-col-story").value});
-$("#btn-col-view").onclick = () => {
-  const st = $("#draw-col-story").value;
-  if (!st) return toast("Chọn 1 tầng để xem. \"Tất cả tầng\" chỉ dùng khi xuất DXF.", true);
-  openModal(`/api/svg/column_elev/${encodeURIComponent($("#draw-col").value)}?story=${st}`);
+// khổ giấy + tỉ lệ (nhớ lựa chọn trên máy này)
+const DOPT = ["db-paper", "db-tl", "db-tlmc", "dc-paper", "dc-tl", "dc-tlmc"];
+DOPT.forEach(id => {
+  try { const v = localStorage.getItem("perc-" + id); if (v !== null) $("#" + id).value = v; } catch (e) {}
+  $("#" + id).onchange = () => { try { localStorage.setItem("perc-" + id, $("#" + id).value); } catch (e) {} };
+});
+const beamOpt = () => ({paper: $("#db-paper").value, tl: $("#db-tl").value, tlmc: $("#db-tlmc").value});
+const colOpt = () => ({paper: $("#dc-paper").value, tlc: $("#dc-tl").value, tlmcc: $("#dc-tlmc").value});
+$("#db-story").onchange = loadDrawBeams;
+$("#db-find").oninput = filterDrawBeams;
+$("#dc-story").onchange = loadDrawCols;
+$("#dc-find").oninput = loadDrawCols;
+$("#btn-db-view").onclick = () => {
+  const lb = $("#db-beam").value, b = DB.find(x => x.label === lb);
+  if (!b) return toast("Chọn 1 dầm để xem.", true);
+  openModal(`/api/svg/beam/${encodeURIComponent(b.id)}?tl=${$("#db-tl").value}&tlmc=${$("#db-tlmc").value}`);
 };
+$("#btn-db-draw").onclick = () => {
+  const lb = $("#db-beam").value;
+  if (lb === "-") return toast("Không có dầm nào khớp ô tìm.", true);
+  runTask("drawings", {kind: "beam", story: $("#db-story").value, beam: lb, ...beamOpt()});
+};
+$("#btn-dc-view").onclick = () => {
+  const st = $("#dc-story").value, c = $("#dc-col").value;
+  if (!st || !c || c === "-") return toast("Chọn 1 tầng và 1 cột để xem.", true);
+  openModal(`/api/svg/column_elev/${encodeURIComponent(c)}?story=${encodeURIComponent(st)}&tlc=${$("#dc-tl").value}&tlmcc=${$("#dc-tlmc").value}`);
+};
+$("#btn-dc-draw").onclick = () => {
+  const st = $("#dc-story").value, c = $("#dc-col").value;
+  if (c === "-") return toast("Không có cột nào khớp ô tìm.", true);
+  if (!st && !c) return toast("Chọn 1 tầng hoặc 1 cột.", true);
+  runTask("drawings", {kind: "column", story: st, column: c, ...colOpt()});
+};
+$("#btn-draw").onclick = () => runTask("drawings", {story: $("#draw-story").value, ...colOpt(), ...beamOpt()});
+
 document.addEventListener("click", async e => {
   const b = e.target.closest("[data-open]"); if (!b) return;
   const r = await api("/api/open", {name: b.dataset.open});
@@ -364,7 +415,7 @@ async function loadAuth(refresh = false) {
   $("#nav-admin").hidden = !(s && s.is_admin);
   if (AUTH.logged_in) {
     const left = Math.max(0, s.quota - s.used);
-    $("#acct-mail").textContent = s.email;
+    $("#acct-mail").textContent = s.email; $("#acct-mail").title = s.email;
     $("#credit-bar").style.width = (s.quota ? left / s.quota * 100 : 0) + "%";
     $("#acct-txt").innerHTML = `Còn <b>${left}</b>/${s.quota} điểm hôm nay` +
       (AUTH.offline ? `<br><span class="off">Offline – còn ${Math.floor(AUTH.offline_hours_left)} giờ</span>` : "");
@@ -384,16 +435,26 @@ $("#btn-login").onclick = async () => {
 };
 function loadAccount() {
   if (!AUTH || !AUTH.logged_in) return;
-  const s = AUTH.status;
-  $("#acct-stats").innerHTML = [stat(esc(s.email), s.name ? esc(s.name) : "email"),
-    stat(`${s.quota - s.used}/${s.quota}`, "điểm còn lại hôm nay", "ok"),
-    stat(s.is_admin ? "Quản trị" : "Người dùng", "vai trò")].join("");
-  const names = {combos: "Đọc danh sách tổ hợp", etabs: "Đọc dữ liệu ETABS", beams: "Thiết kế dầm",
-                 columns: "Thiết kế cột", drawings: "Xuất bản vẽ DXF", quantity: "Bóc khối lượng"};
-  $("#cost-table").innerHTML = "<tbody>" + Object.entries(AUTH.costs).map(([k, v]) =>
-    `<tr><td>${names[k] || k}</td><td>${v} điểm</td></tr>`).join("") + "</tbody>";
+  const s = AUTH.status, left = Math.max(0, s.quota - s.used);
+  const name = s.name || s.email.split("@")[0];
+  const box = $("#acct-stats");
+  box.className = "acctp";
+  box.innerHTML = `<div class="who">
+      <div class="av">${esc(name.trim()[0] || "?").toUpperCase()}</div>
+      <div class="id"><b>${esc(name)}</b><span title="${esc(s.email)}">${esc(s.email)}</span></div>
+      <span class="role ${s.is_admin ? "adm" : ""}">${s.is_admin ? "★ Quản trị viên" : "Người dùng"}</span>
+    </div>
+    <div class="quota">
+      <div class="q-top"><span><b>${left}</b> / ${s.quota} điểm</span><span class="muted">còn lại hôm nay</span></div>
+      <div class="q-bar"><i style="width:${s.quota ? left / s.quota * 100 : 0}%"></i></div>
+      <small class="muted">Đã dùng ${s.used} điểm hôm nay · làm mới lúc 0h (giờ Việt Nam)</small>
+    </div>`;
+  const order = [["combos", "Đọc danh sách tổ hợp"], ["etabs", "Đọc dữ liệu ETABS"], ["beams", "Thiết kế dầm"],
+                 ["columns", "Thiết kế cột"], ["drawings", "Xuất bản vẽ DXF"], ["quantity", "Bóc khối lượng"]];
+  $("#cost-table").innerHTML = "<tbody>" + order.filter(([k]) => k in AUTH.costs).map(([k, t]) =>
+    `<tr><td>${t}</td><td><span class="cost">${AUTH.costs[k]} điểm</span></td></tr>`).join("") + "</tbody>";
 }
-$("#btn-logout").onclick = async () => { await api("/api/auth/logout", {}); await loadAuth(); };
+$("#btn-logout").onclick = async () => { await api("/api/auth/logout", {}); await loadAuth(); };   // màn đăng nhập che toàn bộ
 $("#btn-delete-me").onclick = async e => {
   const b = e.target;
   if (!b.dataset.sure) { b.dataset.sure = 1; b.textContent = "Bấm lần nữa để xoá vĩnh viễn";
@@ -432,7 +493,7 @@ $("#admin-table").addEventListener("click", async e => {
   }
 });
 
-async function start() { await loadSummary(); loadProjects(); poll(); }
+async function start() { await loadSummary(); show("projects"); poll(); }   // đổi tài khoản -> tải lại dự án của người đó
 (async () => {
   const a = await loadAuth(true);
   if (!a.configured || a.logged_in) start();
